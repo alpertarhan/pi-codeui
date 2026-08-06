@@ -4,6 +4,10 @@ import { resolveGlyphs } from "./glyphs.ts";
 import { SettingsController } from "./settings-controller.ts";
 import { DEFAULT_SETTINGS } from "./settings.ts";
 
+export { detectRoot, getDiff, getLineStats, getRepoState, GitCancelledError, GitError, previewUntracked } from "./git/git.ts";
+export { parseBranch, parseNumstat, parseStatus, PorcelainError } from "./git/porcelain.ts";
+export type { BranchInfo, ChangeCounts, FileChange, LineStats, RepoState, RepoStatus, StatusCode, TextResult, UntrackedPreview } from "./git/types.ts";
+
 export default function codeui(pi: ExtensionAPI): void {
   let controller: SettingsController | undefined;
 

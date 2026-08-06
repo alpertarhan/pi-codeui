@@ -1,6 +1,6 @@
 # @pi-codeui/core
 
-A customization foundation for a Git-aware, keyboard-first [Pi Coding Agent](https://pi.dev) TUI. This milestone provides layered settings, glyph/border/density presets, hot reload, and a native Pi theme; it does not render the future Git UI.
+A customization foundation for a Git-aware, keyboard-first [Pi Coding Agent](https://pi.dev) TUI. It provides layered settings, appearance presets, and a renderer-agnostic read-only Git data layer; it does not render the future Git UI.
 
 ## Requirements and installation
 
@@ -79,7 +79,7 @@ Inside Pi, use `/codeui-doctor` and `/reload`.
 
 ## Scope
 
-Git parsing/UI, overlays, and Vim behavior are intentionally deferred. Their settings are validated now so later milestones can consume one stable configuration surface.
+The internal Git core detects repositories and exposes typed status, branch, diff, numstat, and bounded untracked-preview data. Git UI, overlays, mutating actions, and Vim behavior remain deferred.
 
 ## License
 
