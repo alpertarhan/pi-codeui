@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>pi-codeui — Terminal UX Concept</title>
+<style>
+  :root {
+    --page: #080b10;
+    --terminal: #0d1117;
+    --surface: #111720;
+    --surface-2: #151d28;
+    --line: #253042;
+    --line-soft: #1a2432;
+    --text: #dce7f3;
+    --muted: #7f8da2;
+    --faint: #536075;
+    --cyan: #58d9e8;
+    --blue: #72a7ff;
+    --green: #63d99a;
+    --red: #ff7b8b;
+    --yellow: #e9c46a;
+    --violet: #b997ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { width: 100%; min-height: 100%; margin: 0; background: var(--page); }
+  body {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 34px;
+    color: var(--text);
+    font-family: "SFMono-Regular", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  }
+  .stage { width: 1480px; }
+  .caption {
+    display: flex;
+    justify-content: space-between;
+    align-items: end;
+    margin: 0 4px 17px;
+  }
+  .caption h1 { margin: 0; font-size: 19px; letter-spacing: -.4px; font-weight: 650; }
+  .caption h1 b { color: var(--cyan); }
+  .caption p { margin: 5px 0 0; color: var(--muted); font: 12px/1.45 system-ui, sans-serif; }
+  .caption .tag {
+    color: var(--muted); border: 1px solid var(--line); border-radius: 99px;
+    padding: 7px 11px; font-size: 11px; letter-spacing: .3px;
+  }
+  .terminal {
+    width: 1480px;
+    height: 882px;
+    background: var(--terminal);
+    border: 1px solid #2c3748;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 34px 100px #000a, 0 0 0 1px #ffffff05 inset;
+  }
+  .chrome {
+    height: 47px;
+    display: grid;
+    grid-template-columns: 160px 1fr 260px;
+    align-items: center;
+    padding: 0 15px;
+    border-bottom: 1px solid var(--line);
+    background: #10151d;
+    font-size: 12px;
+  }
+  .dots { display: flex; gap: 8px; align-items: center; }
+  .dot { width: 11px; height: 11px; border-radius: 50%; background: #3d4654; }
+  .dot.red { background: #ff6b6b; }
+  .dot.yellow { background: #e8b95c; }
+  .dot.green { background: #55c98b; }
+  .brand { text-align: center; color: var(--muted); }
+  .brand strong { color: var(--text); font-weight: 650; }
+  .brand .pi { color: var(--cyan); margin-right: 6px; }
+  .session { text-align: right; color: var(--faint); }
+  .session b { color: var(--green); font-weight: 500; }
+
+  .workspace { height: 754px; display: grid; grid-template-columns: 1fr 475px; }
+  .conversation { min-width: 0; display: grid; grid-template-rows: 1fr auto auto; border-right: 1px solid var(--line); }
+  .feed { min-height: 0; overflow: hidden; padding: 23px 28px 12px 31px; }
+  .eyebrow { color: var(--faint); font-size: 10px; letter-spacing: 1.3px; text-transform: uppercase; margin-bottom: 18px; }
+  .message { display: grid; grid-template-columns: 25px 1fr; gap: 12px; margin-bottom: 20px; }
+  .avatar {
+    width: 24px; height: 24px; display: grid; place-items: center;
+    border: 1px solid var(--line); border-radius: 6px; color: var(--muted); font-size: 11px;
+  }
+  .avatar.user { border-color: #345061; color: var(--cyan); background: #10202a; }
+  .avatar.pi { border-color: #3a3457; color: var(--violet); background: #17152a; }
+  .content { min-width: 0; }
+  .meta { height: 24px; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11px; }
+  .meta strong { color: var(--text); font-size: 12px; font-weight: 600; }
+  .content p { margin: 3px 0 0; font-size: 13px; line-height: 1.75; color: #c9d6e4; max-width: 850px; }
+  .content code { color: var(--cyan); background: #101b24; padding: 2px 5px; border-radius: 4px; }
+  .tool-stack { margin: 12px 0 21px 37px; display: grid; gap: 7px; }
+  .tool {
+    height: 36px; display: grid; grid-template-columns: 22px 76px 1fr auto; gap: 9px; align-items: center;
+    padding: 0 11px; border: 1px solid var(--line-soft); border-radius: 7px; background: #0f141c;
+    color: var(--muted); font-size: 11px;
+  }
+  .tool .check { color: var(--green); font-size: 13px; }
+  .tool strong { color: #aebcd0; font-weight: 550; }
+  .tool .path { color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tool .time { color: #46536a; }
+  .answer-line { color: var(--muted); }
+
+  .changes {
+    min-height: 45px; display: flex; align-items: center; gap: 14px;
+    padding: 8px 21px; border-top: 1px solid var(--line); background: #0f151d; font-size: 11px;
+  }
+  .changes .title { color: var(--cyan); font-weight: 700; letter-spacing: .5px; }
+  .branch { color: var(--text); }
+  .pill { color: var(--muted); background: #151e29; border: 1px solid #253346; border-radius: 5px; padding: 4px 7px; }
+  .pill .m { color: var(--yellow); }
+  .pill .a { color: var(--green); }
+  .pill .q { color: var(--violet); }
+  .delta { margin-left: auto; white-space: nowrap; }
+  .plus { color: var(--green); }
+  .minus { color: var(--red); }
+
+  .composer { min-height: 116px; padding: 14px 20px 13px; border-top: 1px solid var(--line); background: #0c1118; }
+  .input {
+    height: 66px; border: 1px solid #34445a; border-radius: 9px; background: #101721;
+    padding: 12px 14px; color: var(--text); font-size: 13px; line-height: 1.5;
+    box-shadow: 0 0 0 1px #58d9e80a inset;
+  }
+  .cursor { display: inline-block; width: 7px; height: 15px; background: var(--cyan); vertical-align: -3px; margin-left: 3px; opacity: .9; }
+  .composer-bottom { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; color: var(--faint); font-size: 10px; }
+  .mode { color: #0d1517; background: var(--green); border-radius: 4px; padding: 3px 7px; font-weight: 800; letter-spacing: .4px; }
+  .hint kbd, .footer kbd {
+    color: #aab8c9; font: inherit; border: 1px solid #303d50; border-bottom-color: #46566d;
+    border-radius: 4px; padding: 2px 5px; background: #151d28;
+  }
+
+  .inspector { min-width: 0; background: #0c1118; display: grid; grid-template-rows: 50px 203px 1fr 49px; }
+  .panel-head {
+    display: flex; align-items: center; padding: 0 17px; border-bottom: 1px solid var(--line);
+    background: #111720; font-size: 11px;
+  }
+  .panel-head strong { font-size: 12px; letter-spacing: .3px; }
+  .panel-head .scope { margin-left: auto; color: var(--muted); }
+  .panel-head .scope b { color: var(--cyan); border-bottom: 1px solid var(--cyan); padding-bottom: 5px; }
+  .files { padding: 9px 9px 8px; border-bottom: 1px solid var(--line); overflow: hidden; }
+  .file {
+    height: 35px; display: grid; grid-template-columns: 25px 1fr auto; align-items: center;
+    padding: 0 9px; border-radius: 6px; font-size: 11px; color: #aebbd0;
+  }
+  .file.active { background: #172331; color: var(--text); box-shadow: inset 2px 0 var(--cyan); }
+  .status { font-weight: 700; }
+  .status.m { color: var(--yellow); }
+  .status.a { color: var(--green); }
+  .status.q { color: var(--violet); }
+  .file .count { color: var(--faint); }
+  .file .count .plus, .file .count .minus { margin-left: 6px; }
+  .diff { min-height: 0; overflow: hidden; }
+  .diff-title {
+    height: 42px; display: flex; align-items: center; padding: 0 17px; color: var(--muted);
+    border-bottom: 1px solid var(--line-soft); font-size: 11px;
+  }
+  .diff-title strong { color: var(--text); font-weight: 550; }
+  .diff-title span { margin-left: auto; color: var(--faint); }
+  .code { padding: 11px 0; font-size: 10.5px; line-height: 20px; }
+  .row { display: grid; grid-template-columns: 38px 38px 15px 1fr; padding-right: 10px; white-space: pre; }
+  .row .ln { color: #465268; text-align: right; padding-right: 10px; user-select: none; }
+  .row .sign { color: var(--faint); }
+  .row.ctx { color: #9eacbf; }
+  .row.add { color: #a8e8c6; background: #11281f; }
+  .row.add .sign { color: var(--green); }
+  .row.del { color: #ffc0c7; background: #2b171d; }
+  .row.del .sign { color: var(--red); }
+  .row.hunk { color: var(--blue); background: #111c2b; margin: 4px 0; }
+  .row.hunk .ln, .row.hunk .sign { color: #5779af; }
+  .footer {
+    display: flex; align-items: center; gap: 9px; padding: 0 14px; border-top: 1px solid var(--line);
+    color: var(--faint); background: #10161e; font-size: 10px;
+  }
+  .footer .close { margin-left: auto; }
+
+  .global-status {
+    height: 81px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+    padding: 0 18px; border-top: 1px solid var(--line); background: #0a0f15; color: var(--faint); font-size: 10px;
+  }
+  .global-status .center { color: var(--muted); }
+  .global-status .center b { color: var(--green); font-weight: 500; }
+  .global-status .right { text-align: right; }
+  .global-status .right b { color: var(--blue); font-weight: 500; }
+</style>
+</head>
+<body>
+  <main class="stage">
+    <header class="caption">
+      <div>
+        <h1><b>π</b> codeui / recommended terminal workspace</h1>
+        <p>Conversation-first layout · persistent Git context · focused diff inspection · keyboard driven</p>
+      </div>
+      <div class="tag">HYBRID PANEL · 1440+ WIDTH</div>
+    </header>
+
+    <section class="terminal">
+      <div class="chrome">
+        <div class="dots"><i class="dot red"></i><i class="dot yellow"></i><i class="dot green"></i></div>
+        <div class="brand"><span class="pi">π</span><strong>pi-codeui</strong> <span>· checkout-flow</span></div>
+        <div class="session"><b>●</b> agent ready &nbsp; 12.4k / 64k</div>
+      </div>
+
+      <div class="workspace">
+        <section class="conversation">
+          <div class="feed">
+            <div class="eyebrow">SESSION · feature/checkout-flow</div>
+
+            <article class="message">
+              <div class="avatar user">U</div>
+              <div class="content">
+                <div class="meta"><strong>You</strong><span>14:32</span></div>
+                <p>Checkout formundaki validation hatasını düzelt. Mevcut API sözleşmesini değiştirme ve ilgili testleri çalıştır.</p>
+              </div>
+            </article>
+
+            <article class="message">
+              <div class="avatar pi">π</div>
+              <div class="content">
+                <div class="meta"><strong>Pi</strong><span>working · 18s</span></div>
+                <p>Validation akışını ve mevcut testleri inceliyorum. API tiplerine dokunmadan form seviyesindeki hata eşlemesini düzelteceğim.</p>
+              </div>
+            </article>
+
+            <div class="tool-stack">
+              <div class="tool"><span class="check">✓</span><strong>read</strong><span class="path">src/checkout/validation.ts</span><span class="time">12ms</span></div>
+              <div class="tool"><span class="check">✓</span><strong>edit</strong><span class="path">src/checkout/CheckoutForm.tsx</span><span class="time">31ms</span></div>
+              <div class="tool"><span class="check">✓</span><strong>bash</strong><span class="path">pnpm test validation.test.ts</span><span class="time">2.4s</span></div>
+            </div>
+
+            <article class="message">
+              <div class="avatar pi">π</div>
+              <div class="content">
+                <div class="meta"><strong>Pi</strong><span>just now</span></div>
+                <p>Hata eşlemesini alan bazlı hale getirdim ve fallback mesajını korudum. <code>12 test</code> geçti; API sözleşmesinde değişiklik yok.</p>
+              </div>
+            </article>
+          </div>
+
+          <div class="changes">
+            <span class="title">CHANGES</span>
+            <span class="branch"> feature/checkout-flow</span>
+            <span class="pill"><b class="m">M 3</b></span>
+            <span class="pill"><b class="a">A 1</b></span>
+            <span class="pill"><b class="q">? 2</b></span>
+            <span class="delta"><b class="plus">+48</b> <b class="minus">−17</b></span>
+          </div>
+
+          <div class="composer">
+            <div class="input">Bir de email alanındaki hata mesajını sadeleştir<span class="cursor"></span></div>
+            <div class="composer-bottom">
+              <span><b class="mode">INSERT</b></span>
+              <span class="hint"><kbd>Ctrl+G</kbd> nvim &nbsp; <kbd>Ctrl+Shift+G</kbd> changes &nbsp; <kbd>Enter</kbd> send</span>
+            </div>
+          </div>
+        </section>
+
+        <aside class="inspector">
+          <div class="panel-head">
+            <strong>GIT EXPLORER</strong>
+            <div class="scope"><b>WORKING</b> &nbsp; STAGED</div>
+          </div>
+
+          <div class="files">
+            <div class="file active"><b class="status m">M</b><span>src/checkout/CheckoutForm.tsx</span><span class="count"><b class="plus">+8</b><b class="minus">−2</b></span></div>
+            <div class="file"><b class="status m">M</b><span>src/checkout/validation.ts</span><span class="count"><b class="plus">+12</b><b class="minus">−9</b></span></div>
+            <div class="file"><b class="status a">A</b><span>src/checkout/errors.ts</span><span class="count"><b class="plus">+24</b></span></div>
+            <div class="file"><b class="status q">?</b><span>notes/validation-cases.md</span><span class="count">new</span></div>
+            <div class="file"><b class="status m">M</b><span>tests/validation.test.ts</span><span class="count"><b class="plus">+4</b><b class="minus">−6</b></span></div>
+          </div>
+
+          <div class="diff">
+            <div class="diff-title"><strong>CheckoutForm.tsx</strong><span>@@ 48–61</span></div>
+            <div class="code">
+              <div class="row hunk"><i class="ln">48</i><i class="ln">48</i><b class="sign"> </b><span>@@ submitOrder @@</span></div>
+              <div class="row ctx"><i class="ln">48</i><i class="ln">48</i><b class="sign"> </b><span> const result = await validate(values)</span></div>
+              <div class="row ctx"><i class="ln">49</i><i class="ln">49</i><b class="sign"> </b><span> if (!result.ok) {</span></div>
+              <div class="row del"><i class="ln">50</i><i class="ln"></i><b class="sign">−</b><span>   setError(result.message)</span></div>
+              <div class="row del"><i class="ln">51</i><i class="ln"></i><b class="sign">−</b><span>   return</span></div>
+              <div class="row add"><i class="ln"></i><i class="ln">50</i><b class="sign">+</b><span>   for (const issue of result.issues) {</span></div>
+              <div class="row add"><i class="ln"></i><i class="ln">51</i><b class="sign">+</b><span>     setFieldError(issue.field,</span></div>
+              <div class="row add"><i class="ln"></i><i class="ln">52</i><b class="sign">+</b><span>       issue.message)</span></div>
+              <div class="row add"><i class="ln"></i><i class="ln">53</i><b class="sign">+</b><span>   }</span></div>
+              <div class="row add"><i class="ln"></i><i class="ln">54</i><b class="sign">+</b><span>   return</span></div>
+              <div class="row ctx"><i class="ln">52</i><i class="ln">55</i><b class="sign"> </b><span> }</span></div>
+              <div class="row ctx"><i class="ln">53</i><i class="ln">56</i><b class="sign"> </b><span></span></div>
+              <div class="row ctx"><i class="ln">54</i><i class="ln">57</i><b class="sign"> </b><span> await placeOrder(values)</span></div>
+            </div>
+          </div>
+
+          <div class="footer">
+            <kbd>j/k</kbd> move <kbd>Tab</kbd> scope <kbd>e</kbd> nvim <kbd>r</kbd> refresh
+            <span class="close"><kbd>Esc</kbd></span>
+          </div>
+        </aside>
+      </div>
+
+      <footer class="global-status">
+        <div>~/dev/storefront &nbsp; · &nbsp; UTF-8</div>
+        <div class="center"><b>✓</b> tests passed &nbsp; · &nbsp; git refreshed 2s ago</div>
+        <div class="right"><b>claude-sonnet-4</b> &nbsp; · &nbsp; thinking high</div>
+      </footer>
+    </section>
+  </main>
+</body>
+</html>
