@@ -1,57 +1,85 @@
 # @pi-codeui/core
 
-A Git-aware, keyboard-first terminal UI extension for [Pi Coding Agent](https://pi.dev). The current M0 release is a type-safe package scaffold; it does not yet render the Git UI.
+A customization foundation for a Git-aware, keyboard-first [Pi Coding Agent](https://pi.dev) TUI. This milestone provides layered settings, glyph/border/density presets, hot reload, and a native Pi theme; it does not render the future Git UI.
 
-## Requirements
+## Requirements and installation
 
 - Node.js 22.19.0 or newer
 - Pi Coding Agent 0.84.x
-
-## Installation
-
-The package is not published yet. After the first release, installation will be:
 
 ```sh
 pi install npm:@pi-codeui/core
 ```
 
-For now, clone the repository, install development dependencies, and load the source directly:
+For local development:
 
 ```sh
 npm install
 npm run dev
 ```
 
-`npm run dev` runs `pi -e ./src/index.ts`. After editing the extension, enter `/reload` in Pi to reload the extension and resources without restarting Pi.
+## Settings
 
-## Current M0 scope
+Settings are loaded in this order, with later valid fields overriding earlier ones:
 
-M0 registers `/codeui-doctor` and intentionally starts no timers, watchers, or processes. The command reports that the scaffold loaded when Pi is running in TUI mode. It produces no UI in print, JSON, or RPC modes.
+1. built-in defaults;
+2. global: `path.join(getAgentDir(), "codeui.settings.json")`, normally `~/.pi/agent/codeui.settings.json` and respecting `PI_CODING_AGENT_DIR`;
+3. trusted project: `<cwd>/.pi/codeui.settings.json` (`.pi` follows Pi's `CONFIG_DIR_NAME`).
 
-## Planned UI
+Project settings are never read unless Pi reports the project trusted. Unknown keys are ignored with warnings. Invalid values inherit the previous layer. Malformed JSON makes that file unusable. Editing either applicable file hot reloads settings; malformed live edits preserve the last valid settings.
 
-Later milestones add a compact changed-files widget, a responsive Git diff explorer, optional minimal Vim editing, and external Neovim integration. Configuration, Git parsing, overlays, and Vim behavior are not part of M0.
+Start a file with the bundled schema:
 
-## Customization split
+```json
+{
+  "$schema": "https://unpkg.com/@pi-codeui/core/schemas/codeui.settings.schema.json",
+  "appearance": {
+    "density": "compact",
+    "borders": "rounded",
+    "glyphPreset": "nerd",
+    "fallbackGlyphPreset": "unicode",
+    "icons": { "brand": "π" }
+  }
+}
+```
 
-`codeui.settings.json` will own layout, density, glyphs, Git behavior, and feature flags. Native Pi themes will own colors. Font family, font size, font features, and ligatures remain the responsibility of the host terminal (for example Ghostty, Kitty, WezTerm, or iTerm2).
+The packaged schema is [`schemas/codeui.settings.schema.json`](./schemas/codeui.settings.schema.json). Supported profiles are:
 
-## Commands
+- density: `compact`, `comfortable`;
+- borders: `rounded`, `square`, `minimal`;
+- glyphs: `nerd`, `unicode`, `ascii`, `custom`;
+- icon overrides: `brand`, `branch`, `modified`, `added`, `untracked`.
+
+`custom` starts from `fallbackGlyphPreset` and applies icon overrides. Overrides also work with the other profiles. `/codeui-doctor` reports active paths, trust, glyph samples, and terminal identity.
+
+## Native theme
+
+Colors remain entirely in Pi's native theme system; pi-codeui does not maintain a second palette. Select `codeui-midnight` with Pi's `/theme` UI or set it in Pi's `settings.json`:
+
+```json
+{ "theme": "codeui-midnight" }
+```
+
+Pi owns native theme hot reload and renderers should use Pi Theme tokens such as `accent`, `border`, and `toolDiffAdded`.
+
+## Terminal fonts
+
+The host terminal—not pi-codeui—owns font family, size, font features, and ligatures. See [`docs/terminal-profiles.md`](./docs/terminal-profiles.md) for user-managed Ghostty, Kitty, and WezTerm examples. Choose `unicode` or `ascii` when a Nerd Font is unavailable.
+
+## Development
 
 ```sh
-npm run check  # strict TypeScript check; no output emitted
-npm test       # exercise command registration and mode guards
-npm run dev    # launch Pi with the local extension
+npm run check
+npm test
+npm pack --dry-run
+npm run dev
 ```
 
-Inside Pi:
+Inside Pi, use `/codeui-doctor` and `/reload`.
 
-```text
-/codeui-doctor
-/reload
-```
+## Scope
 
-See [`PRODUCT_PLAN.md`](./PRODUCT_PLAN.md) for the complete roadmap.
+Git parsing/UI, overlays, and Vim behavior are intentionally deferred. Their settings are validated now so later milestones can consume one stable configuration surface.
 
 ## License
 

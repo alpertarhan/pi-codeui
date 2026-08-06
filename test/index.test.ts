@@ -3,31 +3,30 @@ import test from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import codeui from "../src/index.ts";
 
-type Command = Parameters<ExtensionAPI["registerCommand"]>[1];
-type CommandContext = Parameters<Command["handler"]>[1];
-
-test("/codeui-doctor only notifies in TUI mode", async () => {
-  let doctor: Command | undefined;
+test("/codeui-doctor is safe outside TUI and reports customization ownership in TUI", async () => {
+  let doctor: any;
   codeui({
-    registerCommand(name, command) {
+    on: () => {},
+    registerCommand(name: string, command: unknown) {
       assert.equal(name, "codeui-doctor");
       doctor = command;
     },
-  } as ExtensionAPI);
+  } as unknown as ExtensionAPI);
 
-  assert.ok(doctor);
   const notifications: string[] = [];
-  const context = (hasUI: boolean, mode: CommandContext["mode"]) => ({
-    hasUI,
-    mode,
-    ui: { notify: (message: string) => { notifications.push(message); } },
-  }) as unknown as CommandContext;
-
+  const context = (hasUI: boolean, mode: string) => ({
+    cwd: process.cwd(), hasUI, mode,
+    isProjectTrusted: () => false,
+    ui: { notify: (message: string) => notifications.push(message) },
+  });
   await doctor.handler("", context(false, "print"));
   await doctor.handler("", context(true, "rpc"));
   assert.deepEqual(notifications, []);
 
   await doctor.handler("", context(true, "tui"));
-  assert.match(notifications[0] ?? "", /scaffold loaded/i);
-  assert.match(notifications[0] ?? "", /host terminal/i);
+  assert.match(notifications[0] ?? "", /Global config:/);
+  assert.match(notifications[0] ?? "", /Project config:.*untrusted\/ignored/);
+  assert.match(notifications[0] ?? "", /Glyph preset: nerd/);
+  assert.match(notifications[0] ?? "", /Samples:/);
+  assert.match(notifications[0] ?? "", /host terminal/);
 });

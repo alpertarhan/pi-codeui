@@ -9,6 +9,9 @@
   },
   "files": [
     "src",
+    "schemas",
+    "themes",
+    "docs/terminal-profiles.md",
     "README.md",
     "LICENSE"
   ],
@@ -26,6 +29,9 @@
   "pi": {
     "extensions": [
       "./src/index.ts"
+    ],
+    "themes": [
+      "./themes/codeui-midnight.json"
     ]
   },
   "peerDependencies": {

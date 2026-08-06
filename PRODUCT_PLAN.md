@@ -242,7 +242,7 @@ Proposed schema:
 
 ```json
 {
-  "$schema": "https://pi-codeui.dev/schemas/settings.schema.json",
+  "$schema": "https://unpkg.com/@pi-codeui/core/schemas/codeui.settings.schema.json",
   "appearance": {
     "density": "compact",
     "borders": "rounded",

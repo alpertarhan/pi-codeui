@@ -1,0 +1,75 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://unpkg.com/@pi-codeui/core/schemas/codeui.settings.schema.json",
+  "title": "pi-codeui settings",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "appearance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "density": { "enum": ["compact", "comfortable"] },
+        "borders": { "enum": ["rounded", "square", "minimal"] },
+        "glyphPreset": { "enum": ["nerd", "unicode", "ascii", "custom"] },
+        "fallbackGlyphPreset": { "enum": ["nerd", "unicode", "ascii"] },
+        "icons": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "brand": { "$ref": "#/$defs/icon" },
+            "branch": { "$ref": "#/$defs/icon" },
+            "modified": { "$ref": "#/$defs/icon" },
+            "added": { "$ref": "#/$defs/icon" },
+            "untracked": { "$ref": "#/$defs/icon" }
+          }
+        }
+      }
+    },
+    "widget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "maxFiles": { "type": "integer", "minimum": 1, "maximum": 20 },
+        "placement": { "enum": ["aboveEditor", "belowEditor"] }
+      }
+    },
+    "explorer": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "overlayWidth": { "type": "string", "pattern": "^(3[0-9]|[4-8][0-9]|90)%$" },
+        "minOverlayColumns": { "type": "integer", "minimum": 60, "maximum": 300 },
+        "diffContext": { "type": "integer", "minimum": 0, "maximum": 20 },
+        "maxDiffLines": { "type": "integer", "minimum": 50, "maximum": 5000 }
+      }
+    },
+    "vim": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "startMode": { "enum": ["insert", "normal"] },
+        "externalEditor": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": { "type": "string", "minLength": 1, "maxLength": 256 }
+        }
+      }
+    },
+    "git": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "showUntracked": { "type": "boolean" },
+        "ignoreWhitespace": { "type": "boolean" }
+      }
+    }
+  },
+  "$defs": {
+    "icon": { "type": "string", "minLength": 1, "maxLength": 16, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" }
+  }
+}
