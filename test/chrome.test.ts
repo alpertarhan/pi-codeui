@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { renderChromeFooter, renderChromeHeader } from "../src/chrome.ts";
+import { renderChromeFooter, renderChromeHeader, renderModelStatus } from "../src/chrome.ts";
 import type { GitExec } from "../src/git/git.ts";
 import { GitStateController } from "../src/git-state.ts";
 import { cloneSettings, DEFAULT_SETTINGS } from "../src/settings.ts";
@@ -60,6 +60,16 @@ test("global chrome matches the mockup hierarchy and stays width-safe", async ()
   assert.match(wideFooter[1] ?? "", /CONTEXT  144k\/272k 53%/);
   assert.match(wideFooter[1] ?? "", /MODEL  GPT-5\.3-CODEX   THINK  X-HIGH/);
   assert.doesNotMatch(wideFooter[1] ?? "", /CACHE|TOTAL/, "redundant accounting must not dominate the primary status bar");
+
+  const semanticTheme = {
+    fg: (token: string, text: string) => `[${token}]${text}`,
+    bg: (_token: string, text: string) => text,
+    bold: (text: string) => text,
+  } as Theme;
+  assert.match(renderModelStatus("gpt-5.6-sol", "xhigh", semanticTheme, false), /\[thinkingHigh\]X-HIGH/);
+  assert.doesNotMatch(renderModelStatus("gpt-5.6-sol", "xhigh", semanticTheme, false), /thinkingXhigh|\[error\]/, "reasoning modes must not look like failures");
+  const semanticFooter = renderChromeFooter(git.state, settings, semanticTheme, context, 240).join("\n");
+  assert.match(semanticFooter, /\[muted\]~\/dev\/pi\/\[text\]pi-codeui/, "the active directory must be stronger than its parent path");
 
   for (const width of [24, 40, 80]) {
     assert.ok([...renderChromeHeader(git.state, settings, theme, context, width), ...renderChromeFooter(git.state, settings, theme, context, width)]

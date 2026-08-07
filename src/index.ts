@@ -104,7 +104,7 @@ export default function codeui(pi: ExtensionAPI): void {
       modal,
       label: "PROMPT",
       styleMode: (mode, label, focused) => active.ctx.ui.theme.fg(focused ? (modal && mode === "insert" ? "success" : "accent") : "dim", label),
-      styleBorder: (mode, text, focused) => active.ctx.ui.theme.fg(focused ? (modal && mode === "insert" ? "success" : "borderAccent") : "border", text),
+      styleBorder: (_mode, text) => active.ctx.ui.theme.fg("border", text),
     });
     active.ctx.ui.setEditorComponent(active.vimFactory);
   };

@@ -115,7 +115,7 @@ npm run dev
 Inside Pi:
 
 - In fullscreen mode, Git Explorer remains mounted as a true right-side split and Pi's transcript/editor reflows on the left.
-- A project-aware global header/footer spans both columns: the header identifies the current repository instead of repeating the extension brand, pairs branch with Git health, and shows a single agent state. The prompt border becomes active only when the editor owns focus and uses `PROMPT`, or `NORMAL`/`INSERT` when Vim mode is enabled.
+- A project-aware global header/footer spans both columns: the header identifies the current repository instead of repeating the extension brand, pairs branch with Git health, and shows a single agent state. The prompt keeps a quiet structural border while its `PROMPT` label becomes active only when the editor owns focus; Vim mode uses the same treatment for `NORMAL`/`INSERT`.
 - The footer gives the current path, prioritized session input/output, the active branch's user-turn ordinal (`TURN 7`), live context-window pressure, and clearly labeled `MODEL`/`THINK` values. Redundant cache/total accounting is intentionally omitted from the primary status bar, and narrower terminals progressively collapse labels instead of crowding the prompt.
 - The sidebar continuously exposes the AI's current action, its latest stated rationale, and a newest-first developer activity timeline.
 - The fullscreen sidebar is an integrated rail joined directly to the global header/footer rather than a floating box; clean repositories show a workspace/session overview instead of an empty diff pane.

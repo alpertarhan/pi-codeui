@@ -67,6 +67,13 @@ const projectPath = (cwd: string): string => {
   return fromHome && !fromHome.startsWith("..") ? `~/${sanitizeTerminalLine(fromHome)}` : sanitizeTerminalLine(cwd);
 };
 
+const pathBreadcrumb = (cwd: string, theme: Theme): string => {
+  const path = projectPath(cwd);
+  const leaf = sanitizeTerminalLine(basename(cwd));
+  if (!leaf || !path.endsWith(leaf)) return theme.fg("muted", path);
+  return `${theme.fg("muted", path.slice(0, -leaf.length))}${theme.fg("text", leaf)}`;
+};
+
 export interface ChromeRenderContext {
   cwd: string;
   model?: string;
@@ -100,7 +107,7 @@ export function renderChromeFooter(
   width: number,
 ): string[] {
   if (!settings.chrome.footer || width <= 0) return [];
-  const left = `${theme.fg("dim", "PATH  ")}${theme.fg("muted", projectPath(context.cwd))}`;
+  const left = `${theme.fg("dim", "PATH  ")}${pathBreadcrumb(context.cwd, theme)}`;
   const center = renderUsageMetrics(context.usage, theme, width < 160);
   const right = renderModelStatus(context.model, context.thinking, theme, width < 160);
   return [theme.fg("border", "─".repeat(width)), columns(left, center, right, width, 0.27, 0.45)];
@@ -148,7 +155,7 @@ const THINKING_TONES = {
   low: "thinkingLow",
   medium: "thinkingMedium",
   high: "thinkingHigh",
-  xhigh: "thinkingXhigh",
+  xhigh: "thinkingHigh",
   max: "thinkingMax",
 } as const;
 

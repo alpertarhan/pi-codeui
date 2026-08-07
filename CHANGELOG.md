@@ -6,6 +6,12 @@ All notable changes to `@pi-codeui/core` are documented here. The project follow
 
 - v1.0 compatibility and manual terminal-matrix validation.
 
+## 0.13.1
+
+- Reduce focused prompt chrome to an accent label instead of full-width cyan rules.
+- Render the active directory with stronger breadcrumb contrast in `PATH`.
+- Keep `X-HIGH` reasoning visually distinct from red error/critical-context states.
+
 ## 0.13.0
 
 - Replace the global extension advertisement with repository-aware `PROJECT` identity.
