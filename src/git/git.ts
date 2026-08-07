@@ -1,12 +1,18 @@
 import { constants } from "node:fs";
-import { lstat, open } from "node:fs/promises";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { lstat, mkdtemp, open, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { ExecOptions, ExecResult, ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { parseNumstat, parseStatus, PorcelainError } from "./porcelain.ts";
 import type { LineStats, RepoState, TextResult, UntrackedPreview } from "./types.ts";
 
 export type GitExec = ExtensionAPI["exec"];
 export type DiffScope = "working" | "cached";
+export interface PatchHunk {
+  index: number;
+  header: string;
+  patch: string;
+}
 export const DEFAULT_GIT_TIMEOUT = 10_000;
 
 export class GitError extends Error {
@@ -124,6 +130,56 @@ export async function getDiff(exec: GitExec, root: string, path: string, scope: 
   const result = await run(exec, args, root, options);
   if (result.code !== 0) throw failed(args, result);
   return boundedText(result.stdout, maxBytes, maxLines);
+}
+
+export function parsePatchHunks(patch: string): PatchHunk[] {
+  if (!patch || patch.includes("\0")) return [];
+  const lines = patch.replace(/\r\n/g, "\n").split("\n");
+  const firstHunk = lines.findIndex((line) => line.startsWith("@@"));
+  if (firstHunk < 0) return [];
+  const header = lines.slice(0, firstHunk);
+  if (!header.some((line) => line.startsWith("--- ")) || !header.some((line) => line.startsWith("+++ "))) return [];
+  const starts: number[] = [];
+  for (let index = firstHunk; index < lines.length; index++) if (lines[index]?.startsWith("@@")) starts.push(index);
+  return starts.map((start, index) => {
+    const end = starts[index + 1] ?? lines.length;
+    const body = lines.slice(start, end);
+    while (body.at(-1) === "") body.pop();
+    return { index, header: body[0] ?? "", patch: `${[...header, ...body].join("\n")}\n` };
+  });
+}
+
+export async function applyPatchHunk(exec: GitExec, root: string, patch: string, scope: DiffScope, options: GitCallOptions = {}): Promise<void> {
+  if (!patch || patch.length > 1024 * 1024 || patch.includes("\0")) throw new GitError("invalid or oversized Git patch hunk");
+  const directory = await mkdtemp(join(tmpdir(), "pi-codeui-hunk-"));
+  const patchPath = join(directory, "hunk.patch");
+  const base = ["apply", "--cached", "--recount", "--unidiff-zero", "--whitespace=nowarn", ...(scope === "cached" ? ["--reverse"] : [])];
+  try {
+    await writeFile(patchPath, patch, { encoding: "utf8", mode: 0o600 });
+    const check = [...base, "--check", "--", patchPath];
+    const checked = await run(exec, check, root, options);
+    if (checked.code !== 0) throw failed(check, checked);
+    const apply = [...base, "--", patchPath];
+    const applied = await run(exec, apply, root, options);
+    if (applied.code !== 0) throw failed(apply, applied);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+export function validateCommitMessage(message: string): string {
+  const value = message.trim();
+  if (!value) throw new GitError("commit message cannot be empty");
+  if (value.length > 200) throw new GitError("commit message must be 200 characters or fewer");
+  if (/[\r\n\0]/.test(value)) throw new GitError("commit message must be a single safe line");
+  return value;
+}
+
+export async function commitStaged(exec: GitExec, root: string, message: string, options: GitCallOptions = {}): Promise<void> {
+  const value = validateCommitMessage(message);
+  const args = ["commit", "-m", value];
+  const result = await run(exec, args, root, options);
+  if (result.code !== 0) throw failed(args, result);
 }
 
 export async function getLineStats(exec: GitExec, root: string, scope: DiffScope, options: GitCallOptions = {}): Promise<LineStats> {

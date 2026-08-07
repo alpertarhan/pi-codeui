@@ -52,6 +52,7 @@ export interface SplitPanelOptions {
   header?: DisposableComponent;
   footer?: DisposableComponent;
   confirm?: (title: string, message: string) => Promise<boolean>;
+  input?: (title: string, placeholder?: string) => Promise<string | undefined>;
   select?: (title: string, options: string[]) => Promise<string | undefined>;
   notify?: (message: string, level: "info" | "warning" | "error") => void;
   onAction: (result: Exclude<GitExplorerResult, undefined>) => void;
@@ -283,6 +284,7 @@ export class SplitPanelController {
         getResizeStatus: () => this.resizeNotice,
         getDockedWidgets: () => this.dockedWidgets,
         confirm: this.options.confirm,
+        input: this.options.input,
         select: this.options.select,
         notify: this.options.notify,
         activity: this.options.activity,

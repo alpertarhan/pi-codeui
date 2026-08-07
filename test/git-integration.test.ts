@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { ExecOptions, ExecResult } from "@earendil-works/pi-coding-agent";
-import { detectRoot, discardTrackedFile, getDiff, getLineStats, getRepoState, GitCancelledError, GitError, previewUntracked, stageFile, unstageFile, type GitExec } from "../src/git/git.ts";
+import { applyPatchHunk, commitStaged, detectRoot, discardTrackedFile, getDiff, getLineStats, getRepoState, GitCancelledError, GitError, parsePatchHunks, previewUntracked, stageFile, unstageFile, validateCommitMessage, type GitExec } from "../src/git/git.ts";
 
 const exec: GitExec = (command: string, args: string[], options: ExecOptions = {}) => new Promise((resolve, reject) => {
   const child = spawn(command, args, { cwd: options.cwd, shell: false });
@@ -100,6 +100,36 @@ test("safe file actions stage, unstage, and discard without shell interpolation"
   await stageFile(exec, unborn, "new.ts");
   await unstageFile(exec, unborn, "new.ts", { unbornAdded: true });
   assert.match(await git(unborn, "status", "--short", "--", "new.ts"), /^\?\?/);
+});
+
+test("patch hunks stage and unstage independently, then commit safely", async (t) => {
+  const root = await repository(t);
+  const path = "src/hunks.ts";
+  await mkdir(join(root, "src"), { recursive: true });
+  const original = Array.from({ length: 14 }, (_value, index) => `line ${index + 1}`).join("\n") + "\n";
+  await writeFile(join(root, path), original);
+  await git(root, "add", "--", path);
+  await git(root, "commit", "-m", "base");
+  const changed = original.replace("line 2", "line two changed").replace("line 12", "line twelve changed");
+  await writeFile(join(root, path), changed);
+
+  const patch = await getDiff(exec, root, path, "working", { context: 0 });
+  const hunks = parsePatchHunks(patch.text);
+  assert.equal(hunks.length, 2);
+  await applyPatchHunk(exec, root, hunks[0]!.patch, "working");
+  assert.match(await git(root, "diff", "--cached", "--", path), /line two changed/);
+  assert.doesNotMatch(await git(root, "diff", "--cached", "--", path), /line twelve changed/);
+  assert.match(await git(root, "diff", "--", path), /line twelve changed/);
+
+  const staged = await getDiff(exec, root, path, "cached", { context: 0 });
+  await applyPatchHunk(exec, root, parsePatchHunks(staged.text)[0]!.patch, "cached");
+  assert.equal(await git(root, "diff", "--cached", "--", path), "");
+
+  await stageFile(exec, root, path);
+  await commitStaged(exec, root, "feat: commit staged hunks");
+  assert.equal((await git(root, "log", "-1", "--pretty=%s")).trim(), "feat: commit staged hunks");
+  assert.throws(() => validateCommitMessage("\n"), /cannot be empty/);
+  assert.throws(() => validateCommitMessage("bad\nmessage"), /single safe line/);
 });
 
 test("real Git repository status, diffs, stats, and root detection", async (t) => {

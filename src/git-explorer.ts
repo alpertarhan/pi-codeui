@@ -1,7 +1,7 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, stripTerminalSequences, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type Focusable } from "@earendil-works/pi-tui";
 import { formatDuration, relativeTime, type ActivityRecord, type ActivityTracker, type Diagnostic } from "./activity.ts";
-import { discardTrackedFile, getDiff, previewUntracked, stageFile, unstageFile, type DiffScope, type GitExec } from "./git/git.ts";
+import { applyPatchHunk, commitStaged, discardTrackedFile, getDiff, parsePatchHunks, previewUntracked, stageFile, unstageFile, validateCommitMessage, type DiffScope, type GitExec, type PatchHunk } from "./git/git.ts";
 import type { FileChange, TextResult } from "./git/types.ts";
 import type { GitStateController } from "./git-state.ts";
 import { fuzzySearch, type RankedSearchDocument, type SearchDocument } from "./search.ts";
@@ -20,6 +20,7 @@ export type GitExplorerResult = { action: "edit"; root: string; path: string; li
 export interface GitExplorerOptions {
   embedded?: boolean;
   confirm?: (title: string, message: string) => Promise<boolean>;
+  input?: (title: string, placeholder?: string) => Promise<string | undefined>;
   select?: (title: string, options: string[]) => Promise<string | undefined>;
   notify?: (message: string, level: "info" | "warning" | "error") => void;
   reservedRows?: number;
@@ -107,6 +108,7 @@ export class GitExplorer implements Focusable {
   private searchQuery = "";
   private searchSelected = 0;
   private searchStart = 0;
+  private hunkSelected = 0;
   private lastMouseClick: { view: ExplorerView | "search"; index: number; at: number } | undefined;
   private widgetDockCollapsed = false;
   private widgetDockExpanded = false;
@@ -129,6 +131,7 @@ export class GitExplorer implements Focusable {
   private readonly getResizeStatus: () => string | undefined;
   private readonly getDockedWidgets: () => readonly Component[];
   private readonly confirm: (title: string, message: string) => Promise<boolean>;
+  private readonly input: (title: string, placeholder?: string) => Promise<string | undefined>;
   private readonly selectMenu: (title: string, options: string[]) => Promise<string | undefined>;
   private readonly notify: (message: string, level: "info" | "warning" | "error") => void;
   private readonly activity: ActivityTracker | undefined;
@@ -162,6 +165,7 @@ export class GitExplorer implements Focusable {
     this.getResizeStatus = options.getResizeStatus ?? (() => undefined);
     this.getDockedWidgets = options.getDockedWidgets ?? (() => []);
     this.confirm = options.confirm ?? (async () => false);
+    this.input = options.input ?? (async () => undefined);
     this.selectMenu = options.select ?? (async () => undefined);
     this.notify = options.notify ?? (() => {});
     this.activity = options.activity;
@@ -215,8 +219,17 @@ export class GitExplorer implements Focusable {
       this.toggleWidgetDock();
       return;
     }
+    if (data === "C") {
+      void this.composeCommit();
+      return;
+    }
     if (this.view === "changes" && data === "s") {
-      void this.runFileAction(this.scope === "working" ? "stage" : "unstage");
+      if (this.focus === "diff") void this.runHunkAction();
+      else void this.runFileAction(this.scope === "working" ? "stage" : "unstage");
+      return;
+    }
+    if (this.view === "changes" && this.focus === "diff" && (data === "n" || data === "p")) {
+      this.selectHunk(this.hunkSelected + (data === "n" ? 1 : -1));
       return;
     }
     if (this.view === "changes" && data === "x") {
@@ -445,6 +458,16 @@ export class GitExplorer implements Focusable {
 
     if (!inList) {
       this.focus = "diff";
+      if (this.view === "changes" && listRow > 0 && this.diff.kind === "ready") {
+        const source = formatUnifiedDiff(this.diff.text);
+        const sourceLine = this.diffScroll + listRow - 1;
+        let selected = -1;
+        let hunk = -1;
+        for (let index = 0; index <= Math.min(sourceLine, source.length - 1); index++) {
+          if (source[index]?.text.trimStart().startsWith("@@")) selected = ++hunk;
+        }
+        if (selected >= 0) this.hunkSelected = selected;
+      }
       this.requestRender();
       return true;
     }
@@ -531,13 +554,15 @@ export class GitExplorer implements Focusable {
     if (!file || this.fileActionRunning) return;
     const primary = this.scope === "working" ? (file.conflicted ? "Stage resolved file" : "Stage file") : "Unstage file";
     const options = [primary, "Open in Neovim"];
+    if ((this.repo()?.status.counts.staged ?? 0) > 0) options.push("Commit staged changes…");
     if (this.scope === "working" && !file.untracked && !file.conflicted && !file.oldPath) options.push("Discard working changes…");
     const choice = await this.selectMenu(`Actions · ${sanitizeTerminalLine(file.path)}`, options);
     if (choice === primary) await this.runFileAction(this.scope === "working" ? "stage" : "unstage");
     else if (choice === "Open in Neovim") {
       const repo = this.repo();
       if (repo) this.dismiss({ action: "edit", root: repo.root, path: file.path });
-    } else if (choice === "Discard working changes…") await this.runFileAction("discard");
+    } else if (choice === "Commit staged changes…") await this.composeCommit();
+    else if (choice === "Discard working changes…") await this.runFileAction("discard");
   }
 
   private async runFileAction(action: GitFileAction): Promise<void> {
@@ -589,6 +614,112 @@ export class GitExplorer implements Focusable {
       const message = sanitizeTerminalLine((error as Error).message);
       this.setFileActionStatus(`${action} failed · ${message}`, "error", 5_000);
       this.notify(`Git ${action} failed: ${message}`, "error");
+    } finally {
+      this.fileActionRunning = false;
+    }
+  }
+
+  private currentHunks(): PatchHunk[] {
+    const file = this.files[this.selected];
+    if (!file || this.diff.kind !== "ready" || this.diff.binary || this.diff.truncated || file.untracked || file.conflicted || file.oldPath) return [];
+    return parsePatchHunks(this.diff.text);
+  }
+
+  private selectHunk(index: number): void {
+    const hunks = this.currentHunks();
+    if (!hunks.length) {
+      this.setFileActionStatus("No safe patch hunks available", "warning");
+      return;
+    }
+    this.hunkSelected = Math.max(0, Math.min(index, hunks.length - 1));
+    const positions = formatUnifiedDiff(this.diff.kind === "ready" ? this.diff.text : "")
+      .map((line, lineIndex) => line.text.trimStart().startsWith("@@") ? lineIndex : -1)
+      .filter((lineIndex) => lineIndex >= 0);
+    this.diffScroll = positions[this.hunkSelected] ?? this.diffScroll;
+    this.requestRender();
+  }
+
+  private async runHunkAction(): Promise<void> {
+    const repo = this.repo();
+    const file = this.files[this.selected];
+    const hunks = this.currentHunks();
+    if (!repo || !file || this.fileActionRunning) return;
+    if (this.getSettings().git.ignoreWhitespace) {
+      this.setFileActionStatus("Disable ignoreWhitespace before patch staging", "warning");
+      return;
+    }
+    if (!hunks.length) {
+      this.setFileActionStatus("Hunk actions are unavailable for binary, truncated, untracked, renamed, or conflicted diffs", "warning", 5_000);
+      return;
+    }
+    if (this.activity?.isEditing(file.path)) {
+      this.setFileActionStatus("Wait for the AI to finish editing this file", "warning");
+      return;
+    }
+    this.hunkSelected = Math.min(this.hunkSelected, hunks.length - 1);
+    const hunk = hunks[this.hunkSelected]!;
+    const scope: DiffScope = this.scope === "staged" ? "cached" : "working";
+    const verb = scope === "working" ? "Staging" : "Unstaging";
+    this.fileActionRunning = true;
+    this.setFileActionStatus(`${verb} hunk ${this.hunkSelected + 1}/${hunks.length}…`, "warning", 0);
+    try {
+      await applyPatchHunk(this.exec, repo.root, hunk.patch, scope);
+      await this.git.refresh();
+      this.syncFiles(false);
+      const index = this.files.findIndex((candidate) => candidate.path === file.path);
+      if (index >= 0) this.selected = index;
+      await this.loadDiff();
+      this.hunkSelected = 0;
+      const done = scope === "working" ? "Staged" : "Unstaged";
+      this.setFileActionStatus(`${done} selected hunk in ${file.path}`, "success");
+      this.notify(`${done} selected hunk in ${file.path}`, "info");
+    } catch (error) {
+      const message = sanitizeTerminalLine((error as Error).message);
+      this.setFileActionStatus(`Hunk action failed · ${message}`, "error", 5_000);
+      this.notify(`Git hunk action failed: ${message}`, "error");
+    } finally {
+      this.fileActionRunning = false;
+    }
+  }
+
+  private async composeCommit(): Promise<void> {
+    const repo = this.repo();
+    if (!repo || this.fileActionRunning) return;
+    if (repo.status.counts.staged <= 0) {
+      this.setFileActionStatus("Stage at least one file or hunk before committing", "warning");
+      return;
+    }
+    if (repo.status.counts.conflicted > 0) {
+      this.setFileActionStatus("Resolve all conflicts before committing", "error");
+      return;
+    }
+    if ((this.activity?.records ?? []).some((record) => record.status === "running")) {
+      this.setFileActionStatus("Wait for the active AI action before committing", "warning");
+      return;
+    }
+    const message = await this.input("Commit staged changes", "feat: describe the staged change");
+    if (message === undefined) return;
+    let safeMessage: string;
+    try {
+      safeMessage = validateCommitMessage(message);
+    } catch (error) {
+      this.setFileActionStatus(sanitizeTerminalLine((error as Error).message), "warning");
+      return;
+    }
+    const approved = await this.confirm("Create commit?", `Branch: ${repo.status.branch.name ?? "detached"}\nStaged files: ${repo.status.counts.staged}\n\n${safeMessage}\n\nGit hooks will run normally.`);
+    if (!approved) return;
+    this.fileActionRunning = true;
+    this.setFileActionStatus("Creating commit…", "warning", 0);
+    try {
+      await commitStaged(this.exec, repo.root, safeMessage, { timeout: 120_000 });
+      await this.git.refresh();
+      this.syncFiles();
+      this.setFileActionStatus(`Committed · ${safeMessage}`, "success", 4_000);
+      this.notify(`Committed: ${safeMessage}`, "info");
+    } catch (error) {
+      const detail = sanitizeTerminalLine((error as Error).message);
+      this.setFileActionStatus(`Commit failed · ${detail}`, "error", 6_000);
+      this.notify(`Git commit failed: ${detail}`, "error");
     } finally {
       this.fileActionRunning = false;
     }
@@ -659,9 +790,9 @@ export class GitExplorer implements Focusable {
     if (gap) content.push("");
     this.widgetDockStartRow = widgetDock.length > 0 ? content.length : -1;
     content.push(...widgetDock);
-    const gitAction = this.scope === "working" ? "s Stage · x Discard" : "s Unstage";
-    const fullHints = this.searchActive ? "Type to filter · ↑/↓ Select · Enter Reveal · Ctrl+O Open · Esc Close" : this.view === "changes" ? `j/k Move · ${gitAction} · m Menu · e Open · Tab Scope · / Search · q Back` : this.view === "activity" ? "g Changes · c Checks · j/k Move · e Open · / Search · q Back" : "g Changes · a Activity · j/k Move · e Open location · / Search · q Back";
-    const compactHints = this.searchActive ? "↑/↓ Select · Enter Reveal · ^O Open · Esc" : this.view === "changes" ? `${this.scope === "working" ? "s Stage" : "s Unstage"} · m Menu · e Open · / Find · q` : this.view === "activity" ? "g Git · c Checks · j/k · / Find · q" : "g Git · a Act · j/k · / Find · q";
+    const gitAction = this.focus === "diff" ? `n/p Hunk · s ${this.scope === "working" ? "Stage" : "Unstage"} hunk` : this.scope === "working" ? "s Stage · x Discard" : "s Unstage";
+    const fullHints = this.searchActive ? "Type to filter · ↑/↓ Select · Enter Reveal · Ctrl+O Open · Esc Close" : this.view === "changes" ? `j/k Move · ${gitAction} · C Commit · m Menu · e Open · / Search · q Back` : this.view === "activity" ? "g Changes · c Checks · j/k Move · e Open · / Search · q Back" : "g Changes · a Activity · j/k Move · e Open location · / Search · q Back";
+    const compactHints = this.searchActive ? "↑/↓ Select · Enter Reveal · ^O Open · Esc" : this.view === "changes" ? `${this.focus === "diff" ? "n/p Hunk · s Apply" : this.scope === "working" ? "s Stage" : "s Unstage"} · C Commit · e Open · / Find · q` : this.view === "activity" ? "g Git · c Checks · j/k · / Find · q" : "g Git · a Act · j/k · / Find · q";
     content.push(this.theme.fg("dim", visibleWidth(fullHints) <= inner ? fullHints : compactHints));
 
     const borderToken = this.focused ? "borderAccent" : "border";
@@ -775,6 +906,7 @@ export class GitExplorer implements Focusable {
     if (next === this.selected) return;
     this.selected = next;
     this.diffScroll = 0;
+    this.hunkSelected = 0;
     void this.loadDiff();
     this.requestRender();
   }
@@ -821,6 +953,7 @@ export class GitExplorer implements Focusable {
         this.abort = undefined;
         this.diff = { kind: "ready", ...result };
         this.diffScroll = 0;
+        this.hunkSelected = 0;
         this.requestRender();
       }
     } catch (error) {
@@ -1064,7 +1197,10 @@ export class GitExplorer implements Focusable {
     const file = this.files[this.selected];
     if (!file) return this.renderWorkspaceOverview(width, height);
     const truncated = this.diff.kind === "ready" && this.diff.truncated ? this.theme.fg("warning", " [truncated]") : "";
-    const lines = [this.theme.fg(this.focus === "diff" ? "accent" : "muted", `${this.focus === "diff" ? "▶" : " "} DIFF  ${sanitizeTerminalLine(file.path)}`) + truncated];
+    const hunks = this.currentHunks();
+    this.hunkSelected = Math.min(this.hunkSelected, Math.max(0, hunks.length - 1));
+    const hunkStatus = hunks.length ? this.theme.fg("dim", `  ·  HUNK ${this.hunkSelected + 1}/${hunks.length}  ·  n/p select  ·  s ${this.scope === "working" ? "stage" : "unstage"}`) : "";
+    const lines = [this.theme.fg(this.focus === "diff" ? "accent" : "muted", `${this.focus === "diff" ? "▶" : " "} DIFF  ${sanitizeTerminalLine(file.path)}`) + hunkStatus + truncated];
     const bodyHeight = Math.max(1, height - 1);
     this.lastDiffPage = Math.max(1, bodyHeight - 1);
     if (this.diff.kind === "loading") lines.push(this.theme.fg("dim", "Loading diff…"));
@@ -1075,7 +1211,17 @@ export class GitExplorer implements Focusable {
       const source = this.diff.text ? formatUnifiedDiff(this.diff.text) : [{ text: "No textual changes", color: "toolDiffContext" as const }];
       const maxScroll = Math.max(0, source.length - bodyHeight + (this.diff.truncated ? 1 : 0));
       this.diffScroll = Math.max(0, Math.min(this.diffScroll, maxScroll));
-      for (const line of source.slice(this.diffScroll, this.diffScroll + bodyHeight)) lines.push(this.theme.fg(line.color, line.text));
+      const hunkLines = new Map<number, number>();
+      let hunkIndex = 0;
+      for (let index = 0; index < source.length; index++) {
+        if (source[index]?.text.trimStart().startsWith("@@")) hunkLines.set(index, hunkIndex++);
+      }
+      for (let index = this.diffScroll; index < Math.min(source.length, this.diffScroll + bodyHeight); index++) {
+        const line = source[index]!;
+        const selectedHunk = hunkLines.get(index) === this.hunkSelected;
+        const rendered = this.theme.fg(line.color, selectedHunk ? `▶ HUNK ${this.hunkSelected + 1}/${hunks.length}  ${line.text.trimStart()}` : line.text);
+        lines.push(selectedHunk ? this.theme.bg("selectedBg", fit(rendered, width)) : rendered);
+      }
       if (this.diff.truncated && lines.length < height) lines.push(this.theme.fg("warning", "… diff truncated"));
     }
     while (lines.length < height) lines.push("");

@@ -361,7 +361,7 @@ Acceptance: Pi's interrupt, exit, submit, model, and external-editor shortcuts s
 
 ### M4 — Safe Git actions
 
-Status: per-file stage/unstage, guarded tracked-file discard, right-click/keyboard actions, notifications, and automatic refresh are implemented. Patch selection remains a follow-up.
+Status: per-file and per-hunk stage/unstage, guarded tracked-file discard, right-click/keyboard actions, single-line commit composition, notifications, and automatic refresh are implemented. Multi-hunk selection and advanced commit operations remain follow-ups.
 
 Deliverables:
 

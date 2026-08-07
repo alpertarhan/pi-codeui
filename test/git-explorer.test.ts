@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
@@ -175,6 +176,72 @@ test("safe Git actions stage, unstage, confirm discard, and guard untracked dele
   await settle();
   assert.equal(confirmations, 1, "untracked files must never reach destructive confirmation");
   assert.match(stripTerminalSequences(explorer.render(70).join("\n")), /Untracked deletion is intentionally disabled/);
+  explorer.dispose();
+});
+
+test("diff focus navigates and stages only the selected hunk", async () => {
+  const patch = [
+    "diff --git a/both.ts b/both.ts",
+    "index 1111111..2222222 100644",
+    "--- a/both.ts",
+    "+++ b/both.ts",
+    "@@ -1 +1 @@",
+    "-old one",
+    "+new one",
+    "@@ -10 +10 @@",
+    "-old ten",
+    "+new ten",
+    "",
+  ].join("\n");
+  const calls: string[][] = [];
+  let appliedPatch = "";
+  let resolveApplied!: () => void;
+  const applied = new Promise<void>((resolve) => { resolveApplied = resolve; });
+  const exec: GitExec = async (_command, args) => {
+    calls.push(args);
+    if (args[0] === "apply" && !args.includes("--check")) {
+      appliedPatch = await readFile(args.at(-1)!, "utf8");
+      resolveApplied();
+    }
+    return { stdout: args[0] === "diff" ? patch : "", stderr: "", code: 0, killed: false };
+  };
+  const git = controller();
+  git.refresh = async () => {};
+  const explorer = new GitExplorer(git, exec, () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {});
+  await settle();
+  explorer.handleInput("\r");
+  assert.match(stripTerminalSequences(explorer.render(90).join("\n")), /HUNK 1\/2/);
+  explorer.handleInput("n");
+  assert.match(stripTerminalSequences(explorer.render(90).join("\n")), /HUNK 2\/2/);
+  explorer.handleInput("s");
+  await applied;
+  assert.match(appliedPatch, /old ten/);
+  assert.doesNotMatch(appliedPatch, /old one/);
+  assert.ok(calls.some((args) => args[0] === "apply" && args.includes("--check")));
+  explorer.dispose();
+});
+
+test("commit composer inputs, confirms, and commits staged changes", async () => {
+  const calls: string[][] = [];
+  let confirmation = "";
+  let resolveCommitted!: () => void;
+  const committed = new Promise<void>((resolve) => { resolveCommitted = resolve; });
+  const git = controller();
+  if (git.state.kind === "repo") git.state.status.counts.conflicted = 0;
+  git.refresh = async () => {};
+  const explorer = new GitExplorer(git, async (_command, args) => {
+    calls.push(args);
+    if (args[0] === "commit") resolveCommitted();
+    return { stdout: "", stderr: "", code: 0, killed: false };
+  }, () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, {
+    input: async () => "feat: ship safe composer",
+    confirm: async (_title, message) => { confirmation = message; return true; },
+  });
+  await settle();
+  explorer.handleInput("C");
+  await committed;
+  assert.match(confirmation, /Staged files: 2/);
+  assert.ok(calls.some((args) => args[0] === "commit" && args[1] === "-m" && args[2] === "feat: ship safe composer"));
   explorer.dispose();
 });
 
