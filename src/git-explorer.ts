@@ -1,5 +1,5 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Focusable } from "@earendil-works/pi-tui";
+import { Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type Focusable } from "@earendil-works/pi-tui";
 import { formatDuration, relativeTime, type ActivityRecord, type ActivityTracker } from "./activity.ts";
 import { getDiff, previewUntracked, type DiffScope, type GitExec } from "./git/git.ts";
 import type { FileChange, TextResult } from "./git/types.ts";
@@ -16,6 +16,7 @@ export interface GitExplorerOptions {
   reservedRows?: number;
   getTerminalRows?: () => number;
   getResizeStatus?: () => string | undefined;
+  getDockedWidgets?: () => readonly Component[];
   activity?: ActivityTracker;
 }
 type DiffState = { kind: "empty" } | { kind: "loading" } | { kind: "error"; message: string } | ({ kind: "ready" } & TextResult);
@@ -90,6 +91,8 @@ export class GitExplorer implements Focusable {
   private activityDetailScroll = 0;
   private lastActivityDetailCount = 0;
   private lastMouseClick: { view: ExplorerView; index: number; at: number } | undefined;
+  private widgetDockCollapsed = false;
+  private widgetDockStartRow = -1;
   private files: FileChange[] = [];
   private diff: DiffState = { kind: "empty" };
   private abort: AbortController | undefined;
@@ -101,6 +104,7 @@ export class GitExplorer implements Focusable {
   private readonly reservedRows: number;
   private readonly getTerminalRows: () => number;
   private readonly getResizeStatus: () => string | undefined;
+  private readonly getDockedWidgets: () => readonly Component[];
   private readonly activity: ActivityTracker | undefined;
   private readonly unsubscribe: () => void;
   private readonly unsubscribeActivity: (() => void) | undefined;
@@ -130,6 +134,7 @@ export class GitExplorer implements Focusable {
     this.reservedRows = options.reservedRows ?? 0;
     this.getTerminalRows = options.getTerminalRows ?? (() => process.stdout.rows ?? 24);
     this.getResizeStatus = options.getResizeStatus ?? (() => undefined);
+    this.getDockedWidgets = options.getDockedWidgets ?? (() => []);
     this.activity = options.activity;
     this.unsubscribe = git.onChange(() => this.syncFiles());
     this.unsubscribeActivity = this.activity?.onChange(() => {
@@ -154,6 +159,11 @@ export class GitExplorer implements Focusable {
     if (data === "g") {
       this.view = "changes";
       this.focus = "list";
+      this.requestRender();
+      return;
+    }
+    if (data === "w" && this.getDockedWidgets().length > 0) {
+      this.widgetDockCollapsed = !this.widgetDockCollapsed;
       this.requestRender();
       return;
     }
@@ -207,8 +217,17 @@ export class GitExplorer implements Focusable {
     const gap = density.gap > 0 && maxRows >= 12;
     const nowLines = maxRows >= 9 ? (this.activity?.current ? 2 : 1) : maxRows >= 7 ? 1 : 0;
     const bodyStart = 1 + nowLines + (gap ? 1 : 0);
-    const bodyHeight = Math.max(1, maxRows - 2 - nowLines - (gap ? 2 : 0));
+    const bodyBudget = Math.max(1, maxRows - 2 - nowLines - (gap ? 2 : 0));
+    const dockBudget = settings.explorer.dockWidgets
+      ? Math.max(0, Math.min(settings.explorer.maxDockRows, Math.floor(maxRows * 0.4), bodyBudget - 3))
+      : 0;
+    const bodyHeight = Math.max(1, bodyBudget - this.renderWidgetDock(inner, dockBudget).length);
 
+    if (this.widgetDockStartRow >= 0 && y >= this.widgetDockStartRow) {
+      if (y === this.widgetDockStartRow) this.widgetDockCollapsed = !this.widgetDockCollapsed;
+      this.requestRender();
+      return true;
+    }
     if (y === 0) {
       if (localX >= inner - 8) this.view = "activity";
       else if (localX >= inner - 18) this.view = "changes";
@@ -301,7 +320,12 @@ export class GitExplorer implements Focusable {
     const now = this.renderNow(inner, maxRows >= 9 ? 2 : maxRows >= 7 ? 1 : 0);
     content.push(...now);
     if (gap) content.push("");
-    const bodyHeight = Math.max(1, maxRows - (this.embedded ? 2 : 4) - now.length - (gap ? 2 : 0));
+    const bodyBudget = Math.max(1, maxRows - (this.embedded ? 2 : 4) - now.length - (gap ? 2 : 0));
+    const dockBudget = this.embedded && settings.explorer.dockWidgets
+      ? Math.max(0, Math.min(settings.explorer.maxDockRows, Math.floor(maxRows * 0.4), bodyBudget - 3))
+      : 0;
+    const widgetDock = this.renderWidgetDock(inner, dockBudget);
+    const bodyHeight = Math.max(1, bodyBudget - widgetDock.length);
 
     const renderList = (panelWidth: number, height: number) => this.view === "changes" ? this.renderList(panelWidth, height) : this.renderActivityList(panelWidth, height);
     const renderDetail = (panelWidth: number, height: number) => this.view === "changes" ? this.renderDiff(panelWidth, height) : this.renderActivityDetail(panelWidth, height);
@@ -322,8 +346,10 @@ export class GitExplorer implements Focusable {
       content.push(...renderDetail(inner, detailHeight));
     }
     if (gap) content.push("");
-    const fullHints = this.view === "changes" ? "a activity  j/k move  Tab scope  ↗/double-click/e nvim  [ ] resize  0 reset  q editor" : "g changes  j/k move  ↗/double-click/e nvim  [ ] resize  0 reset  q editor";
-    const compactHints = this.view === "changes" ? "a activity  j/k  ↗/dbl/e  [ ] size  0 reset  q" : "g changes  j/k  ↗/dbl/e  [ ] size  0 reset  q";
+    this.widgetDockStartRow = widgetDock.length > 0 ? content.length : -1;
+    content.push(...widgetDock);
+    const fullHints = this.view === "changes" ? "a activity  j/k move  Tab scope  ↗/double-click/e nvim  w widgets  [ ] resize  q editor" : "g changes  j/k move  ↗/double-click/e nvim  w widgets  [ ] resize  q editor";
+    const compactHints = this.view === "changes" ? "a activity  j/k  ↗/dbl/e  w dock  [ ] size  q" : "g changes  j/k  ↗/dbl/e  w dock  [ ] size  q";
     content.push(this.theme.fg("dim", visibleWidth(fullHints) <= inner ? fullHints : compactHints));
 
     const borderToken = this.focused ? "borderAccent" : "border";
@@ -336,7 +362,28 @@ export class GitExplorer implements Focusable {
     return [horizontal(border.topLeft, border.topRight), ...framed, horizontal(border.bottomLeft, border.bottomRight)];
   }
 
+  private renderWidgetDock(width: number, height: number): string[] {
+    if (height <= 0) return [];
+    const widgetLines = this.getDockedWidgets().flatMap((widget) => {
+      try {
+        return widget.render(width);
+      } catch (error) {
+        return [this.theme.fg("error", `Widget error: ${sanitizeTerminalLine((error as Error).message)}`)];
+      }
+    });
+    while (widgetLines.length > 0 && visibleWidth(widgetLines[0] ?? "") === 0) widgetLines.shift();
+    while (widgetLines.length > 0 && visibleWidth(widgetLines.at(-1) ?? "") === 0) widgetLines.pop();
+    if (widgetLines.length === 0) return [];
+    const heading = `${this.theme.fg("accent", this.widgetDockCollapsed ? "▸" : "▾")} ${this.theme.fg("muted", "EXTENSIONS")}${this.theme.fg("dim", `  ${widgetLines.length} rows · w ${this.widgetDockCollapsed ? "expand" : "collapse"}`)}`;
+    if (this.widgetDockCollapsed || height === 1) return [truncateToWidth(heading, width, "…")];
+    const visibleRows = height - 1;
+    const lines = widgetLines.slice(0, visibleRows).map((line) => truncateToWidth(line, width, "…"));
+    if (widgetLines.length > visibleRows && lines.length > 0) lines[lines.length - 1] = this.theme.fg("dim", `… ${widgetLines.length - visibleRows + 1} more widget rows`);
+    return [truncateToWidth(heading, width, "…"), ...lines];
+  }
+
   invalidate(): void {
+    for (const widget of this.getDockedWidgets()) widget.invalidate();
     this.requestRender();
   }
 

@@ -50,7 +50,9 @@ Start a file with the bundled schema:
     "layout": "split",
     "splitWidth": "34%",
     "overlayWidth": "52%",
-    "minOverlayColumns": 100
+    "minOverlayColumns": 100,
+    "dockWidgets": true,
+    "maxDockRows": 12
   }
 }
 ```
@@ -64,6 +66,7 @@ The packaged schema is [`schemas/codeui.settings.schema.json`](./schemas/codeui.
 - icon overrides: `brand`, `branch`, `modified`, `added`, `untracked`;
 - Explorer layout: `split` (default) or `overlay`;
 - split width: 20–50% via `explorer.splitWidth`;
+- generic extension-widget docking in the right rail via `explorer.dockWidgets`; `maxDockRows` limits it to 3–24 rows;
 - mockup-style global header/footer and bordered prompt via `chrome.header`, `chrome.footer`, and `chrome.editor`.
 
 `custom` starts from `fallbackGlyphPreset` and applies icon overrides. Overrides also work with the other profiles. `/codeui-doctor` reports active paths, trust, glyph samples, and terminal identity.
@@ -116,6 +119,7 @@ Inside Pi:
 - The footer shows session input/output, latest-turn usage, cached tokens, total tokens, and live context-window usage with warning/error thresholds.
 - The sidebar continuously exposes the AI's current action, its latest stated rationale, and a newest-first developer activity timeline.
 - The fullscreen sidebar is an integrated rail joined directly to the global header/footer rather than a floating box; clean repositories show a workspace/session overview instead of an empty diff pane.
+- Pi widgets that would normally consume transcript height above/below the editor—including `rpiv-todo`—are generically relocated into an `EXTENSIONS` dock in the right rail. Press `w` or click its heading to collapse it; no third-party fork is required.
 - Test, build, typecheck, and lint commands receive first-class activity labels and surface useful result lines.
 - `/codeui` or `Ctrl+Shift+G` focuses the split panel, or opens the fallback Explorer.
 - `/codeui-refresh` refreshes repository state.

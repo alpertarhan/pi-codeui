@@ -32,6 +32,8 @@ test("defaults and concrete appearance presets are complete", () => {
   assert.equal(DEFAULT_SETTINGS.explorer.layout, "split");
   assert.equal(DEFAULT_SETTINGS.explorer.splitWidth, "34%");
   assert.equal(DEFAULT_SETTINGS.explorer.overlayWidth, "52%");
+  assert.equal(DEFAULT_SETTINGS.explorer.dockWidgets, true);
+  assert.equal(DEFAULT_SETTINGS.explorer.maxDockRows, 12);
   assert.deepEqual(Object.keys(DENSITY_PRESETS), ["compact", "comfortable"]);
   assert.deepEqual(Object.keys(BORDER_PRESETS), ["rounded", "square", "minimal"]);
 });
@@ -42,7 +44,7 @@ test("normalization ignores unknown keys and inherits invalid values", () => {
     appearance: { theme: "", density: "tiny", borders: "square", extra: 1 },
     chrome: { header: "yes", footer: false },
     widget: { maxFiles: 999, enabled: false },
-    explorer: { layout: "sideways", splitWidth: "75%", overlayWidth: "99%", diffContext: 0 },
+    explorer: { layout: "sideways", splitWidth: "75%", overlayWidth: "99%", dockWidgets: "yes", maxDockRows: 99, diffContext: 0 },
     vim: { externalEditor: [] },
   });
   assert.equal(result.settings.appearance.theme, DEFAULT_SETTINGS.appearance.theme);
@@ -51,6 +53,8 @@ test("normalization ignores unknown keys and inherits invalid values", () => {
   assert.equal(result.settings.widget.maxFiles, DEFAULT_SETTINGS.widget.maxFiles);
   assert.equal(result.settings.explorer.layout, DEFAULT_SETTINGS.explorer.layout);
   assert.equal(result.settings.explorer.splitWidth, DEFAULT_SETTINGS.explorer.splitWidth);
+  assert.equal(result.settings.explorer.dockWidgets, DEFAULT_SETTINGS.explorer.dockWidgets);
+  assert.equal(result.settings.explorer.maxDockRows, DEFAULT_SETTINGS.explorer.maxDockRows);
   assert.equal(result.settings.chrome.header, true);
   assert.equal(result.settings.chrome.footer, false);
   assert.equal(result.settings.widget.enabled, false);

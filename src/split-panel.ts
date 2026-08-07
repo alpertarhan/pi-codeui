@@ -4,6 +4,7 @@ import {
   VStack,
   isViewportTUI,
   type Component,
+  type StackEntry,
   type TUI,
   type TuiInputListener,
   type ViewportTUI,
@@ -21,6 +22,26 @@ type InternalViewportTui = ViewportTUI & {
 };
 
 type DisposableComponent = Component & { dispose?(): void };
+type InternalStack = VStack & {
+  entries: StackEntry[];
+  gap: number;
+  align: "stretch" | "start" | "center" | "end";
+};
+
+export function extractExtensionWidgetDock(root: Component): { mainRoot: Component; widgets: Component[] } {
+  if (!(root instanceof VStack)) return { mainRoot: root, widgets: [] };
+  const rootStack = root as InternalStack;
+  if (rootStack.entries.length !== 2) return { mainRoot: root, widgets: [] };
+  const dockEntry = rootStack.entries[1];
+  if (!dockEntry || !(dockEntry.component instanceof VStack)) return { mainRoot: root, widgets: [] };
+  const dockStack = dockEntry.component as InternalStack;
+  if (dockStack.entries.length !== 6) return { mainRoot: root, widgets: [] };
+  const widgetIndexes = new Set([2, 4]);
+  const widgets = dockStack.entries.filter((_entry, index) => widgetIndexes.has(index)).map((entry) => entry.component);
+  const dock = new VStack(dockStack.entries.filter((_entry, index) => !widgetIndexes.has(index)), { gap: dockStack.gap, align: dockStack.align });
+  const mainRoot = new VStack(rootStack.entries.map((entry, index) => index === 1 ? { ...entry, component: dock } : entry), { gap: rootStack.gap, align: rootStack.align });
+  return { mainRoot, widgets };
+}
 
 export interface SplitPanelOptions {
   git: GitStateController;
@@ -44,6 +65,8 @@ export class SplitPanelController {
   private readonly tui: TUI;
   private readonly options: SplitPanelOptions;
   private originalRoot: Component | undefined;
+  private mainRoot: Component | undefined;
+  private dockedWidgets: Component[] = [];
   private splitRoot: Component | undefined;
   private panel: GitExplorer | undefined;
   private previousFocus: Component | null = null;
@@ -101,6 +124,7 @@ export class SplitPanelController {
     const currentRoot = internal.layoutRoot;
     if (!currentRoot) return false;
     this.originalRoot = currentRoot;
+    this.configureWidgetDock();
     this.panel = this.createPanel();
     this.mount(currentRoot, this.panel, this.getPanelColumns());
     return true;
@@ -118,6 +142,8 @@ export class SplitPanelController {
 
   settingsChanged(): void {
     if (!this.ensure()) return;
+    this.configureWidgetDock();
+    if (this.originalRoot && this.panel) this.mount(this.originalRoot, this.panel, this.getPanelColumns());
     this.panel?.settingsChanged();
     this.tui.requestRender();
   }
@@ -250,9 +276,21 @@ export class SplitPanelController {
         reservedRows: (this.options.header ? 2 : 0) + (this.options.footer ? 2 : 0),
         getTerminalRows: () => this.tui.terminal.rows,
         getResizeStatus: () => this.resizeNotice,
+        getDockedWidgets: () => this.dockedWidgets,
         activity: this.options.activity,
       },
     );
+  }
+
+  private configureWidgetDock(): void {
+    if (!this.originalRoot || !this.options.getSettings().explorer.dockWidgets) {
+      this.mainRoot = this.originalRoot;
+      this.dockedWidgets = [];
+      return;
+    }
+    const extracted = extractExtensionWidgetDock(this.originalRoot);
+    this.mainRoot = extracted.mainRoot;
+    this.dockedWidgets = extracted.widgets;
   }
 
   private deactivate(result?: GitExplorerResult): void {
@@ -272,7 +310,7 @@ export class SplitPanelController {
     if (!isViewportTUI(this.tui)) return;
     this.panelColumns = panelColumns;
     const content = new HStack([
-      { component: originalRoot, basis: 0, grow: 1, shrink: 1, minSize: 40 },
+      { component: this.mainRoot ?? originalRoot, basis: 0, grow: 1, shrink: 1, minSize: 40 },
       { component: panel, basis: panelColumns, grow: 0, shrink: 1, minSize: 30, maxSize: panelColumns },
     ]);
     const rows = [];
@@ -303,6 +341,8 @@ export class SplitPanelController {
       if (internal.layoutRoot === this.splitRoot) this.tui.setLayoutRoot(this.originalRoot);
     }
     this.originalRoot = undefined;
+    this.mainRoot = undefined;
+    this.dockedWidgets = [];
     this.splitRoot = undefined;
     this.panelColumns = 0;
     this.previousFocus = null;

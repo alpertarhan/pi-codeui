@@ -80,6 +80,24 @@ test("embedded Explorer supports mouse tabs, scopes, and row selection", async (
   explorer.dispose();
 });
 
+test("docked extension widgets render and collapse inside the rail", async () => {
+  const widget = { render: () => ["", "● Todos (0/2)", "├─ ◐ Implement dock", "└─ ○ Verify", ""], invalidate: () => {} };
+  const explorer = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, {
+    embedded: true,
+    getTerminalRows: () => 24,
+    getDockedWidgets: () => [widget],
+  });
+  await settle();
+  const expanded = stripTerminalSequences(explorer.render(60).join("\n"));
+  assert.match(expanded, /EXTENSIONS/);
+  assert.match(expanded, /Implement dock/);
+  explorer.handleInput("w");
+  const collapsed = stripTerminalSequences(explorer.render(60).join("\n"));
+  assert.match(collapsed, /w expand/);
+  assert.doesNotMatch(collapsed, /Implement dock/);
+  explorer.dispose();
+});
+
 test("double-clicking a changed file returns a Neovim action", async () => {
   let result: unknown;
   const explorer = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, (value) => { result = value; }, {

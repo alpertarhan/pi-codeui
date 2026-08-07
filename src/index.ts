@@ -156,7 +156,7 @@ export default function codeui(pi: ExtensionAPI): void {
       return {
         render: (width: number) => {
           active.split?.ensure();
-          return widget?.render(width) ?? [];
+          return active.split?.installed ? [] : widget?.render(width) ?? [];
         },
         invalidate: () => widget?.invalidate(),
         dispose: () => {

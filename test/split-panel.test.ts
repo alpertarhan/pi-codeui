@@ -3,7 +3,7 @@ import test from "node:test";
 import { TuiAltScreen, VStack, type Component, type Terminal } from "@earendil-works/pi-tui";
 import { GitStateController } from "../src/git-state.ts";
 import { cloneSettings, DEFAULT_SETTINGS } from "../src/settings.ts";
-import { SplitPanelController } from "../src/split-panel.ts";
+import { extractExtensionWidgetDock, SplitPanelController } from "../src/split-panel.ts";
 
 function terminal(columns = 160, rows = 30): Terminal {
   return {
@@ -29,6 +29,18 @@ const focusable = () => ({
   render: () => ["editor"],
   invalidate: () => {},
   handleInput: () => {},
+});
+
+test("Pi extension widgets are extracted from the transcript dock", () => {
+  const line = (text: string): Component => ({ render: () => [text], invalidate: () => {} });
+  const above = line("TODO WIDGET");
+  const below = line("BELOW WIDGET");
+  const dock = new VStack([line("pending"), line("status"), above, line("editor"), below, line("footer")]);
+  const root = new VStack([line("transcript"), dock]);
+  const extracted = extractExtensionWidgetDock(root);
+  assert.deepEqual(extracted.widgets, [above, below]);
+  assert.doesNotMatch(extracted.mainRoot.render(80).join("\n"), /TODO WIDGET|BELOW WIDGET/);
+  assert.match(extracted.widgets.flatMap((widget) => widget.render(80)).join("\n"), /TODO WIDGET/);
 });
 
 test("fullscreen split wraps and restores Pi's existing layout root", () => {
