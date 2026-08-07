@@ -114,13 +114,16 @@ Inside Pi:
 - In fullscreen mode, Git Explorer remains mounted as a true right-side split and Pi's transcript/editor reflows on the left.
 - A global CodeUI header/footer spans both columns; the prompt uses a bordered `PROMPT` editor, or `NORMAL`/`INSERT` when Vim mode is enabled.
 - The footer shows session input/output, latest-turn usage, cached tokens, total tokens, and live context-window usage with warning/error thresholds.
+- The sidebar continuously exposes the AI's current action, its latest stated rationale, and a newest-first developer activity timeline.
 - `/codeui` or `Ctrl+Shift+G` focuses the split panel, or opens the fallback Explorer.
 - `/codeui-refresh` refreshes repository state.
 - `/codeui-vim` toggles embedded Vim mode for the current session.
 - `/codeui-doctor` reports active customization and editor settings.
 - `/reload` reloads the extension and Pi resources.
 
-Git Explorer controls: `j`/`k` or arrows select files and scroll the focused diff; `Tab` switches Working/Staged; `Enter` toggles list/diff focus; `PageUp`/`PageDown` or `Ctrl+U`/`Ctrl+D` scroll the diff; `e` opens the selected file in Neovim; `r` refreshes; `q`/`Escape` returns focus to Pi's editor while the split stays visible. Regular TUI mode, narrow terminals, and `explorer.layout: "overlay"` use the existing overlay/dashboard fallback.
+Git Explorer controls: `j`/`k` or arrows select; `a` opens Activity; `g` returns to Changes; `Tab` switches Working/Staged; `Enter` toggles list/detail focus; `PageUp`/`PageDown` or `Ctrl+U`/`Ctrl+D` scroll details; `e` opens the selected file in Neovim; `r` refreshes; `q`/`Escape` returns focus to Pi's editor while the split stays visible. Regular TUI mode, narrow terminals, and `explorer.layout: "overlay"` use the existing overlay/dashboard fallback.
+
+The always-visible `NOW`/`WHY` card is derived from Pi's assistant narrative and tool lifecycle events. Activity records are session-local, bounded, display-only, and never injected into model context. The Activity detail panel explains `WHAT`, `WHY`, `HOW`, and `RESULT`; edit/write timestamps also order changed files newest-first and mark files currently being edited.
 
 The current UI follows [the terminal mockup](./docs/mockups/pi-codeui-terminal.png).
 

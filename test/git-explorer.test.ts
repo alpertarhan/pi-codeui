@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
+import { ActivityTracker } from "../src/activity.ts";
 import { filesForScope, formatUnifiedDiff, GitExplorer } from "../src/git-explorer.ts";
 import type { GitExec } from "../src/git/git.ts";
 import { GitStateController } from "../src/git-state.ts";
@@ -70,6 +71,37 @@ test("Explorer returns a safe external-editor action for the selected file", asy
   explorer.handleInput("j");
   explorer.handleInput("e");
   assert.deepEqual(result, { action: "edit", root: "/repo", path: "working.ts" });
+});
+
+test("Explorer shows NOW, newest-touched files, and WHAT/WHY/HOW activity insight", async () => {
+  const activity = new ActivityTracker("/repo");
+  activity.captureMessage({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "Fixing validation while preserving the API contract." }] } } as any);
+  const now = Date.now();
+  activity.start({ type: "tool_execution_start", toolCallId: "one", toolName: "edit", args: { path: "/repo/working.ts", edits: [{ oldText: "old", newText: "new" }] } }, now - 200);
+  activity.end({ type: "tool_execution_end", toolCallId: "one", toolName: "edit", result: {}, isError: false }, now - 150);
+  activity.start({ type: "tool_execution_start", toolCallId: "two", toolName: "edit", args: { path: "/repo/both.ts", edits: [{ oldText: "a", newText: "b\nc" }] } }, now - 100);
+  activity.end({ type: "tool_execution_end", toolCallId: "two", toolName: "edit", result: {}, isError: false }, now - 20);
+
+  const explorer = new GitExplorer(controller(), async () => ({ stdout: "@@ -1 +1 @@\n-old\n+new", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, {
+    activity,
+    getTerminalRows: () => 30,
+  });
+  await settle();
+  const changes = stripTerminalSequences(explorer.render(70).join("\n"));
+  assert.match(changes, /NOW\s+✓ Editing both\.ts/);
+  assert.match(changes, /WHY\s+Fixing validation/);
+  assert.ok(changes.indexOf("both.ts") < changes.indexOf("working.ts"));
+
+  explorer.handleInput("a");
+  const insight = stripTerminalSequences(explorer.render(100).join("\n"));
+  assert.match(insight, /ACTIVITY\s+2/);
+  assert.match(insight, /DEVELOPER INSIGHT/);
+  assert.match(insight, /WHAT\s+Editing both\.ts/);
+  assert.match(insight, /WHY\s+Fixing validation/);
+  assert.match(insight, /HOW\s+1 replacement/);
+  assert.match(insight, /RESULT\s+Completed in 80ms/);
+  explorer.dispose();
+  activity.dispose();
 });
 
 test("Explorer keys, diff colors/truncation, and renders stay width-safe", async () => {

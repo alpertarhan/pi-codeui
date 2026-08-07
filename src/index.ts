@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Key } from "@earendil-works/pi-tui";
+import { ActivityTracker } from "./activity.ts";
 import { createChangesWidget } from "./changes-widget.ts";
 import { chromeContext, createChromeBar } from "./chrome.ts";
 import { getSettingsPaths } from "./config.ts";
@@ -25,6 +26,7 @@ type EditorFactory = ReturnType<ExtensionContext["ui"]["getEditorComponent"]>;
 interface Runtime {
   settings: SettingsController;
   git: GitStateController;
+  activity: ActivityTracker;
   ctx: ExtensionContext;
   unsubscribe: () => void;
   explorer?: GitExplorer;
@@ -68,6 +70,7 @@ export default function codeui(pi: ExtensionAPI): void {
     active?.split?.dispose();
     if (active) restoreEditor(active);
     active?.unsubscribe();
+    active?.activity.dispose();
     active?.git.dispose();
     runtime = undefined;
     settings?.dispose();
@@ -137,6 +140,7 @@ export default function codeui(pi: ExtensionAPI): void {
       active.split?.dispose();
       active.split = new SplitPanelController(tui, {
         git,
+        activity: active.activity,
         exec: pi.exec.bind(pi),
         getSettings: () => active.settings.current,
         theme,
@@ -192,7 +196,7 @@ export default function codeui(pi: ExtensionAPI): void {
     let result: GitExplorerResult;
     try {
       result = await ctx.ui.custom<GitExplorerResult>((tui, theme, _keybindings, done) => {
-        const explorer = new GitExplorer(active.git, pi.exec.bind(pi), () => active.settings.current, theme, () => tui.requestRender(), done);
+        const explorer = new GitExplorer(active.git, pi.exec.bind(pi), () => active.settings.current, theme, () => tui.requestRender(), done, { activity: active.activity });
         active.explorer = explorer;
         return explorer;
       }, wide ? {
@@ -220,17 +224,24 @@ export default function codeui(pi: ExtensionAPI): void {
     if (ctx.mode !== "tui") return;
 
     const git = new GitStateController(pi.exec.bind(pi), ctx.cwd);
+    const activity = new ActivityTracker(ctx.cwd);
     const unsubscribe = git.onChange(() => {
       if (!runtime) return;
       const state = git.state;
       ctx.ui.setStatus(GIT_KEY, state.kind === "error" ? ctx.ui.theme.fg("error", "git error") : undefined);
     });
-    runtime = { settings, git, ctx, unsubscribe, agentRunning: false };
+    runtime = { settings, git, activity, ctx, unsubscribe, agentRunning: false };
     await git.refresh();
     installWidget();
   });
 
   pi.on("session_shutdown", (_event, ctx) => disposeRuntime(ctx));
+
+  pi.on("turn_start", () => runtime?.activity.beginTurn());
+  pi.on("message_end", (event) => runtime?.activity.captureMessage(event));
+  pi.on("tool_execution_start", (event) => runtime?.activity.start(event));
+  pi.on("tool_execution_update", (event) => runtime?.activity.update(event));
+  pi.on("tool_execution_end", (event) => runtime?.activity.end(event));
 
   pi.on("agent_start", () => {
     if (!runtime) return;
@@ -300,6 +311,7 @@ export default function codeui(pi: ExtensionAPI): void {
         `Samples: ${glyphs.icons.brand} ${glyphs.icons.branch} ${glyphs.icons.modified} ${glyphs.icons.added} ${glyphs.icons.untracked}`,
         `Terminal: ${terminal}`,
         `Explorer layout: ${runtime?.split?.diagnostic ?? current.explorer.layout}`,
+        `Activity: ${runtime?.activity.records.length ?? 0} records${runtime?.activity.current ? ` · ${runtime.activity.current.status} ${runtime.activity.current.toolName}` : ""}`,
         `External editor: ${current.vim.externalEditor.join(" ")}`,
         `Embedded Vim: ${(runtime?.vimOverride ?? current.vim.enabled) ? "enabled" : "disabled"}`,
         "Font family, size, features, and ligatures are managed by the host terminal.",

@@ -7,6 +7,7 @@ import {
   type TUI,
   type ViewportTUI,
 } from "@earendil-works/pi-tui";
+import type { ActivityTracker } from "./activity.ts";
 import type { GitExec } from "./git/git.ts";
 import { GitExplorer, type GitExplorerResult } from "./git-explorer.ts";
 import type { GitStateController } from "./git-state.ts";
@@ -21,6 +22,7 @@ type DisposableComponent = Component & { dispose?(): void };
 
 export interface SplitPanelOptions {
   git: GitStateController;
+  activity?: ActivityTracker;
   exec: GitExec;
   getSettings: () => Readonly<CodeuiSettings>;
   theme: Theme;
@@ -130,6 +132,7 @@ export class SplitPanelController {
         embedded: true,
         reservedRows: (this.options.header ? 2 : 0) + (this.options.footer ? 2 : 0),
         getTerminalRows: () => this.tui.terminal.rows,
+        activity: this.options.activity,
       },
     );
   }
