@@ -340,6 +340,8 @@ export default function codeui(pi: ExtensionAPI): void {
       const current = settings?.current ?? DEFAULT_SETTINGS;
       const glyphs = resolveGlyphs(current);
       const terminal = process.env.TERM_PROGRAM || process.env.TERM || "unknown";
+      const workspaceState = runtime ? runtime.workspaceStore.get(runtime.workspaceRoot) : {};
+      const repo = runtime?.git.state;
       ctx.ui.notify([
         `Global config: ${paths.global}`,
         `Project config: ${paths.project} (${ctx.isProjectTrusted() ? "trusted/active" : "untrusted/ignored"})`,
@@ -347,9 +349,12 @@ export default function codeui(pi: ExtensionAPI): void {
         `Chrome: header ${current.chrome.header ? "on" : "off"} · footer ${current.chrome.footer ? "on" : "off"} · editor ${current.chrome.editor ? "on" : "off"}`,
         `Glyph preset: ${glyphs.preset}`,
         `Samples: ${glyphs.icons.brand} ${glyphs.icons.branch} ${glyphs.icons.modified} ${glyphs.icons.added} ${glyphs.icons.untracked}`,
+        `Runtime: Node ${process.versions.node} · ${process.stdout.columns ?? 0}x${process.stdout.rows ?? 0}`,
         `Terminal: ${terminal}`,
+        `Repository: ${repo?.kind === "repo" ? repo.root : repo?.kind ?? "inactive"}`,
         `Explorer layout: ${runtime?.split?.diagnostic ?? current.explorer.layout}`,
-        `Activity: ${runtime?.activity.records.length ?? 0} records${runtime?.activity.current ? ` · ${runtime.activity.current.status} ${runtime.activity.current.toolName}` : ""}`,
+        `Workspace state: ${runtime?.workspaceStore.path ?? "inactive"} · ${JSON.stringify(workspaceState)}`,
+        `Activity: ${runtime?.activity.records.length ?? 0} records · ${runtime?.activity.diagnostics.length ?? 0} problems${runtime?.activity.current ? ` · ${runtime.activity.current.status} ${runtime.activity.current.toolName}` : ""}`,
         `External editor: ${current.vim.externalEditor.join(" ")}`,
         `Embedded Vim: ${(runtime?.vimOverride ?? current.vim.enabled) ? "enabled" : "disabled"}`,
         "Font family, size, features, and ligatures are managed by the host terminal.",

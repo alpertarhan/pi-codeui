@@ -130,6 +130,7 @@ export class ActivityTracker {
   private readonly history: ActivityRecord[] = [];
   private readonly touchedAt = new Map<string, number>();
   private narrative = "Waiting for the next AI action";
+  private revision = 0;
   private disposed = false;
 
   constructor(cwd: string, maxRecords = 100) {
@@ -139,6 +140,10 @@ export class ActivityTracker {
 
   get records(): readonly ActivityRecord[] {
     return this.history;
+  }
+
+  get version(): number {
+    return this.revision;
   }
 
   get current(): ActivityRecord | undefined {
@@ -294,6 +299,7 @@ export class ActivityTracker {
 
   private emit(): void {
     if (this.disposed) return;
+    this.revision++;
     for (const listener of this.listeners) listener();
   }
 }

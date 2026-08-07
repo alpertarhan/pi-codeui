@@ -1,6 +1,6 @@
 # @pi-codeui/core
 
-A Git-aware, keyboard-first [Pi Coding Agent](https://pi.dev) TUI with a persistent changes summary and read-only Git Explorer.
+A Git-aware, keyboard-first [Pi Coding Agent](https://pi.dev) developer workspace with safe Git actions, diagnostics, search, persistent layout, and Vim/Neovim integration.
 
 ## Requirements and installation
 
@@ -69,7 +69,7 @@ The packaged schema is [`schemas/codeui.settings.schema.json`](./schemas/codeui.
 - generic extension-widget docking in the right rail via `explorer.dockWidgets`; `maxDockRows` limits it to 3–24 rows;
 - mockup-style global header/footer and bordered prompt via `chrome.header`, `chrome.footer`, and `chrome.editor`.
 
-`custom` starts from `fallbackGlyphPreset` and applies icon overrides. Overrides also work with the other profiles. `/codeui-doctor` reports active paths, trust, glyph samples, and terminal identity.
+`custom` starts from `fallbackGlyphPreset` and applies icon overrides. Overrides also work with the other profiles. `/codeui-doctor` reports config/trust, glyph samples, Node/terminal viewport, repository, split compatibility, persisted workspace state, Activity/diagnostic counts, and editor ownership.
 
 ## Native theme
 
@@ -128,6 +128,7 @@ Inside Pi:
 - Clean workspaces use a calm ready state instead of zero-heavy counters or irrelevant file-opening hints; Working/Staged tabs always show their own counts.
 - `/codeui` or `Ctrl+Shift+G` focuses the split panel, or opens the fallback Explorer.
 - `/codeui-refresh` refreshes repository state.
+- `/codeui-reset-workspace` clears the current repository's persisted width/tab/scope/dock state.
 - `/codeui-vim` toggles embedded Vim mode for the current session.
 - `/codeui-doctor` reports active customization and editor settings.
 - `/reload` reloads the extension and Pi resources.
@@ -138,13 +139,23 @@ The always-visible `NOW`/`WHY` card is derived from Pi's assistant narrative and
 
 The current UI follows [the terminal mockup](./docs/mockups/pi-codeui-terminal.png).
 
+## Development verification
+
+```sh
+npm ci
+npm run verify
+npm pack --dry-run
+```
+
+GitHub Actions runs the same typecheck, full temporary-repository test suite, and package-content smoke check on Node.js 22.19.0. Release history is maintained in [CHANGELOG.md](./CHANGELOG.md).
+
 ## Scope
 
 The changes widget remains display-only. Git Explorer supports shell-free per-file and per-hunk stage/unstage, guarded tracked-file discard, native Neovim quickfix export, and a single-line commit composer with staged/conflict/active-AI guards, explicit confirmation, normal Git hooks, automatic refresh, and failure recovery. Hunk actions are intentionally unavailable for binary, truncated, untracked, renamed, conflicted, or whitespace-filtered diffs. Untracked deletion, conflict/rename discard, multi-line commit bodies, commit amend/signing, and replacement of Pi's transcript renderer remain deferred. Embedded Vim mode intentionally implements only the documented core motions; it is not a Vim emulator.
 
 ### Split-layout compatibility
 
-Pi's public extension API currently exposes overlays but not side panels. To deliver a reflowing split without maintaining a separate Pi fork, `@pi-codeui/core` 0.1.x wraps Pi 0.84's fullscreen `layoutRoot` with pi-tui's `HStack` and restores it on reload/shutdown. This adapter is intentionally bounded to the package's Pi 0.84 peer range. If the internal root is unavailable, pi-codeui fails closed to the overlay/dashboard instead of replacing an unknown layout. A future upstream `setSidePanel` API should replace this adapter.
+Pi's public extension API currently exposes overlays but not side panels. To deliver a reflowing split without maintaining a separate Pi fork, the current pre-1.0 adapter wraps Pi 0.84's fullscreen `layoutRoot` with pi-tui's `HStack` and restores it on reload/shutdown. This adapter is intentionally bounded to the package's Pi 0.84 peer range. If the internal root is unavailable, pi-codeui fails closed to the overlay/dashboard instead of replacing an unknown layout. A future upstream `setSidePanel` API should replace this adapter.
 
 ## License
 

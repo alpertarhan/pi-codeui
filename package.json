@@ -1,6 +1,6 @@
 {
   "name": "@pi-codeui/core",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "Git-aware, keyboard-first terminal UI for Pi Coding Agent",
   "type": "module",
   "license": "MIT",
@@ -14,6 +14,7 @@
     "docs/terminal-profiles.md",
     "docs/mockups/pi-codeui-terminal.png",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "keywords": [
@@ -25,6 +26,7 @@
   "scripts": {
     "check": "tsc",
     "test": "node --test test/*.test.ts",
+    "verify": "npm run check && npm test",
     "dev": "pi -e ./src/index.ts"
   },
   "pi": {

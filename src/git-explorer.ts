@@ -115,6 +115,9 @@ export class GitExplorer implements Focusable {
   private searchQuery = "";
   private searchSelected = 0;
   private searchStart = 0;
+  private searchCache: { query: string; gitState: GitStateController["state"]; activityVersion: number; showUntracked: boolean; results: RankedSearchDocument<WorkspaceSearchValue>[] } | undefined;
+  private diffDisplayCache: { text: string; lines: DisplayDiffLine[] } | undefined;
+  private hunkCache: { text: string; hunks: PatchHunk[] } | undefined;
   private hunkSelected = 0;
   private lastMouseClick: { view: ExplorerView | "search"; index: number; at: number } | undefined;
   private widgetDockCollapsed = false;
@@ -345,7 +348,14 @@ export class GitExplorer implements Focusable {
   }
 
   private searchResults(): RankedSearchDocument<WorkspaceSearchValue>[] {
-    return fuzzySearch(this.searchDocuments(), this.searchQuery, 50);
+    const gitState = this.git.state;
+    const activityVersion = this.activity?.version ?? 0;
+    const showUntracked = this.getSettings().git.showUntracked;
+    const cached = this.searchCache;
+    if (cached && cached.query === this.searchQuery && cached.gitState === gitState && cached.activityVersion === activityVersion && cached.showUntracked === showUntracked) return cached.results;
+    const results = fuzzySearch(this.searchDocuments(), this.searchQuery, 50);
+    this.searchCache = { query: this.searchQuery, gitState, activityVersion, showUntracked, results };
+    return results;
   }
 
   private handleSearchInput(data: string): void {
@@ -482,7 +492,7 @@ export class GitExplorer implements Focusable {
     if (!inList) {
       this.focus = "diff";
       if (this.view === "changes" && listRow > 0 && this.diff.kind === "ready") {
-        const source = formatUnifiedDiff(this.diff.text);
+        const source = this.displayDiffLines(this.diff.text);
         const sourceLine = this.diffScroll + listRow - 1;
         let selected = -1;
         let hunk = -1;
@@ -687,10 +697,20 @@ export class GitExplorer implements Focusable {
     this.dismiss({ action: "quickfix", root: repo.root, entries });
   }
 
+  private displayDiffLines(text: string): DisplayDiffLine[] {
+    if (this.diffDisplayCache?.text === text) return this.diffDisplayCache.lines;
+    const lines = formatUnifiedDiff(text);
+    this.diffDisplayCache = { text, lines };
+    return lines;
+  }
+
   private currentHunks(): PatchHunk[] {
     const file = this.files[this.selected];
     if (!file || this.diff.kind !== "ready" || this.diff.binary || this.diff.truncated || file.untracked || file.conflicted || file.oldPath) return [];
-    return parsePatchHunks(this.diff.text);
+    if (this.hunkCache?.text === this.diff.text) return this.hunkCache.hunks;
+    const hunks = parsePatchHunks(this.diff.text);
+    this.hunkCache = { text: this.diff.text, hunks };
+    return hunks;
   }
 
   private selectHunk(index: number): void {
@@ -700,7 +720,7 @@ export class GitExplorer implements Focusable {
       return;
     }
     this.hunkSelected = Math.max(0, Math.min(index, hunks.length - 1));
-    const positions = formatUnifiedDiff(this.diff.kind === "ready" ? this.diff.text : "")
+    const positions = this.displayDiffLines(this.diff.kind === "ready" ? this.diff.text : "")
       .map((line, lineIndex) => line.text.trimStart().startsWith("@@") ? lineIndex : -1)
       .filter((lineIndex) => lineIndex >= 0);
     this.diffScroll = positions[this.hunkSelected] ?? this.diffScroll;
@@ -1282,7 +1302,7 @@ export class GitExplorer implements Focusable {
     else if (this.diff.kind === "empty") lines.push(this.theme.fg("muted", file ? "No diff" : "Select a file"));
     else if (this.diff.binary) lines.push(this.theme.fg("warning", "Binary file"));
     else {
-      const source = this.diff.text ? formatUnifiedDiff(this.diff.text) : [{ text: "No textual changes", color: "toolDiffContext" as const }];
+      const source = this.diff.text ? this.displayDiffLines(this.diff.text) : [{ text: "No textual changes", color: "toolDiffContext" as const }];
       const maxScroll = Math.max(0, source.length - bodyHeight + (this.diff.truncated ? 1 : 0));
       this.diffScroll = Math.max(0, Math.min(this.diffScroll, maxScroll));
       const hunkLines = new Map<number, number>();
