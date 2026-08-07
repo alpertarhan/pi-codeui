@@ -119,8 +119,9 @@ Inside Pi:
 - The footer shows session input/output, latest-turn usage, cached tokens, total tokens, and live context-window usage with warning/error thresholds.
 - The sidebar continuously exposes the AI's current action, its latest stated rationale, and a newest-first developer activity timeline.
 - The fullscreen sidebar is an integrated rail joined directly to the global header/footer rather than a floating box; clean repositories show a workspace/session overview instead of an empty diff pane.
-- Pi widgets that would normally consume transcript height above/below the editor—including `rpiv-todo`—are generically relocated into an `EXTENSIONS` dock in the right rail. Press `w` or click its heading to collapse it; no third-party fork is required.
+- Pi widgets that would normally consume transcript height above/below the editor—including `rpiv-todo`—are generically relocated into an `EXTENSIONS` dock in the right rail. Press `w` or click its heading to collapse it; no third-party fork is required. Completed-only todo lists auto-compact to a single success summary and can still be expanded with `w`.
 - Test, build, typecheck, and lint commands receive first-class activity labels and surface useful result lines.
+- Clean workspaces use a calm ready state instead of zero-heavy counters or irrelevant file-opening hints; Working/Staged tabs always show their own counts.
 - `/codeui` or `Ctrl+Shift+G` focuses the split panel, or opens the fallback Explorer.
 - `/codeui-refresh` refreshes repository state.
 - `/codeui-vim` toggles embedded Vim mode for the current session.

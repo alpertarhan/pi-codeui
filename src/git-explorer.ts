@@ -1,5 +1,5 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type Focusable } from "@earendil-works/pi-tui";
+import { Key, matchesKey, stripTerminalSequences, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type Focusable } from "@earendil-works/pi-tui";
 import { formatDuration, relativeTime, type ActivityRecord, type ActivityTracker } from "./activity.ts";
 import { getDiff, previewUntracked, type DiffScope, type GitExec } from "./git/git.ts";
 import type { FileChange, TextResult } from "./git/types.ts";
@@ -92,6 +92,8 @@ export class GitExplorer implements Focusable {
   private lastActivityDetailCount = 0;
   private lastMouseClick: { view: ExplorerView; index: number; at: number } | undefined;
   private widgetDockCollapsed = false;
+  private widgetDockExpanded = false;
+  private widgetDockEffectiveCollapsed = false;
   private widgetDockStartRow = -1;
   private files: FileChange[] = [];
   private diff: DiffState = { kind: "empty" };
@@ -163,8 +165,7 @@ export class GitExplorer implements Focusable {
       return;
     }
     if (data === "w" && this.getDockedWidgets().length > 0) {
-      this.widgetDockCollapsed = !this.widgetDockCollapsed;
-      this.requestRender();
+      this.toggleWidgetDock();
       return;
     }
     if (this.view === "changes" && matchesKey(data, Key.tab)) {
@@ -224,8 +225,7 @@ export class GitExplorer implements Focusable {
     const bodyHeight = Math.max(1, bodyBudget - this.renderWidgetDock(inner, dockBudget).length);
 
     if (this.widgetDockStartRow >= 0 && y >= this.widgetDockStartRow) {
-      if (y === this.widgetDockStartRow) this.widgetDockCollapsed = !this.widgetDockCollapsed;
-      this.requestRender();
+      if (y === this.widgetDockStartRow) this.toggleWidgetDock();
       return true;
     }
     if (y === 0) {
@@ -348,8 +348,8 @@ export class GitExplorer implements Focusable {
     if (gap) content.push("");
     this.widgetDockStartRow = widgetDock.length > 0 ? content.length : -1;
     content.push(...widgetDock);
-    const fullHints = this.view === "changes" ? "a activity  j/k move  Tab scope  ↗/double-click/e nvim  w widgets  [ ] resize  q editor" : "g changes  j/k move  ↗/double-click/e nvim  w widgets  [ ] resize  q editor";
-    const compactHints = this.view === "changes" ? "a activity  j/k  ↗/dbl/e  w dock  [ ] size  q" : "g changes  j/k  ↗/dbl/e  w dock  [ ] size  q";
+    const fullHints = this.view === "changes" ? "a Activity · j/k Move · Tab Scope · e Open · w Widgets · [ ] Resize · q Back" : "g Changes · j/k Move · e Open · w Widgets · [ ] Resize · q Back";
+    const compactHints = this.view === "changes" ? "a Act · j/k · e Open · w Dock · [ ] · q" : "g Git · j/k · e Open · w Dock · [ ] · q";
     content.push(this.theme.fg("dim", visibleWidth(fullHints) <= inner ? fullHints : compactHints));
 
     const borderToken = this.focused ? "borderAccent" : "border";
@@ -360,6 +360,17 @@ export class GitExplorer implements Focusable {
     const framed = content.map((line) => this.theme.fg(borderToken, border.vertical) + fit(line, inner) + this.theme.fg(borderToken, border.vertical));
     const horizontal = (left: string, right: string) => this.theme.fg(borderToken, truncateToWidth(`${left}${border.horizontal.repeat(Math.max(0, width - visibleWidth(left) - visibleWidth(right)))}${right}`, width, ""));
     return [horizontal(border.topLeft, border.topRight), ...framed, horizontal(border.bottomLeft, border.bottomRight)];
+  }
+
+  private toggleWidgetDock(): void {
+    if (this.widgetDockEffectiveCollapsed) {
+      this.widgetDockCollapsed = false;
+      this.widgetDockExpanded = true;
+    } else {
+      this.widgetDockCollapsed = true;
+      this.widgetDockExpanded = false;
+    }
+    this.requestRender();
   }
 
   private renderWidgetDock(width: number, height: number): string[] {
@@ -374,11 +385,29 @@ export class GitExplorer implements Focusable {
     while (widgetLines.length > 0 && visibleWidth(widgetLines[0] ?? "") === 0) widgetLines.shift();
     while (widgetLines.length > 0 && visibleWidth(widgetLines.at(-1) ?? "") === 0) widgetLines.pop();
     if (widgetLines.length === 0) return [];
-    const heading = `${this.theme.fg("accent", this.widgetDockCollapsed ? "▸" : "▾")} ${this.theme.fg("muted", "EXTENSIONS")}${this.theme.fg("dim", `  ${widgetLines.length} rows · w ${this.widgetDockCollapsed ? "expand" : "collapse"}`)}`;
-    if (this.widgetDockCollapsed || height === 1) return [truncateToWidth(heading, width, "…")];
+
+    const plain = widgetLines.map((line) => stripTerminalSequences(line).trim());
+    const todoIndex = plain.findIndex((line) => /Todos\s*\((\d+)\s*\/\s*(\d+)\)/i.test(line));
+    const progress = todoIndex >= 0 ? /Todos\s*\((\d+)\s*\/\s*(\d+)\)/i.exec(plain[todoIndex] ?? "") : null;
+    const completed = Number(progress?.[1] ?? 0);
+    const total = Number(progress?.[2] ?? 0);
+    const todoBody = todoIndex >= 0 ? plain.slice(todoIndex + 1).filter(Boolean) : [];
+    const completedOnly = total > 0 && completed >= total && todoBody.length > 0 && todoBody.every((line) => /[✓✔]/.test(line) || /^…\s+\d+/.test(line));
+    const autoCompact = completedOnly && !this.widgetDockExpanded;
+    const collapsed = this.widgetDockCollapsed || autoCompact || height === 1;
+    this.widgetDockEffectiveCollapsed = collapsed;
+
+    const state = autoCompact
+      ? this.theme.fg("success", `Todos ${completed}/${total} complete`)
+      : collapsed
+        ? this.theme.fg("dim", `${widgetLines.length} lines`)
+        : "";
+    const heading = `${this.theme.fg(autoCompact ? "success" : "accent", autoCompact ? "✓" : collapsed ? "▸" : "▾")} ${this.theme.fg("muted", "EXTENSIONS")}${state ? `  ${state}` : ""}${this.theme.fg("dim", `  ·  w ${collapsed ? "expand" : "collapse"}`)}`;
+    if (collapsed) return [truncateToWidth(heading, width, "…")];
+
     const visibleRows = height - 1;
     const lines = widgetLines.slice(0, visibleRows).map((line) => truncateToWidth(line, width, "…"));
-    if (widgetLines.length > visibleRows && lines.length > 0) lines[lines.length - 1] = this.theme.fg("dim", `… ${widgetLines.length - visibleRows + 1} more widget rows`);
+    if (widgetLines.length > visibleRows && lines.length > 0) lines[lines.length - 1] = this.theme.fg("dim", `… +${widgetLines.length - visibleRows + 1} hidden widget lines`);
     return [truncateToWidth(heading, width, "…"), ...lines];
   }
 
@@ -492,7 +521,7 @@ export class GitExplorer implements Focusable {
   private renderNow(width: number, maxLines: number): string[] {
     if (maxLines <= 0) return [];
     const record = this.activity?.current;
-    if (!record) return [this.theme.fg("dim", "NOW  ○ idle · waiting for the next AI action")].slice(0, maxLines);
+    if (!record) return [this.theme.fg("dim", "NOW  ○ ready · awaiting your next instruction")].slice(0, maxLines);
     const status = record.status === "running" ? this.theme.fg("warning", "●") : record.status === "error" ? this.theme.fg("error", "✕") : this.theme.fg("success", "✓");
     const timing = record.status === "running" ? relativeTime(record.startedAt) : record.durationMs === undefined ? "" : formatDuration(record.durationMs);
     const lines = [`${this.theme.fg("dim", "NOW  ")}${status} ${this.theme.fg("text", record.what)}${timing ? this.theme.fg("dim", `  ${timing}`) : ""}`];
@@ -558,8 +587,12 @@ export class GitExplorer implements Focusable {
 
   private renderList(width: number, height: number): string[] {
     const working = this.scope === "working";
-    const scope = `${working ? this.theme.fg("accent", "WORKING") : this.theme.fg("muted", "Working")}  ${working ? this.theme.fg("muted", "Staged") : this.theme.fg("accent", "STAGED")}`;
-    const lines = [this.theme.fg(this.focus === "list" ? "accent" : "muted", `${this.focus === "list" ? "▶" : " "} `) + `${scope}${this.theme.fg("dim", `  ·  ${this.files.length} files`)}`];
+    const repo = this.repo();
+    const settings = this.getSettings();
+    const workingCount = repo ? filesForScope(repo.status.files, "working", settings.git.showUntracked).length : 0;
+    const stagedCount = repo ? filesForScope(repo.status.files, "staged", settings.git.showUntracked).length : 0;
+    const scope = `${working ? this.theme.fg("accent", `WORKING ${workingCount}`) : this.theme.fg("muted", `Working ${workingCount}`)}  ${working ? this.theme.fg("muted", `Staged ${stagedCount}`) : this.theme.fg("accent", `STAGED ${stagedCount}`)}`;
+    const lines = [this.theme.fg(this.focus === "list" ? "accent" : "muted", `${this.focus === "list" ? "▶" : " "} `) + scope];
     const visible = Math.max(1, height - 1);
     if (this.selected < this.listStart) this.listStart = this.selected;
     if (this.selected >= this.listStart + visible) this.listStart = this.selected - visible + 1;
@@ -608,27 +641,37 @@ export class GitExplorer implements Focusable {
   private renderWorkspaceOverview(width: number, height: number): string[] {
     const repo = this.repo();
     const lines = [this.theme.fg(this.focus === "diff" ? "accent" : "muted", `${this.focus === "diff" ? "▶" : " "} WORKSPACE OVERVIEW`)];
-    if (!repo) return [...lines, this.theme.fg("muted", "No Git repository")].slice(0, height);
+    if (!repo) return [...lines, this.theme.fg("muted", "No Git repository · Git features are paused")].slice(0, height);
     const status = repo.status;
     const branch = status.branch;
-    const sync = branch.gone ? "upstream gone" : [branch.ahead ? `↑${branch.ahead}` : "", branch.behind ? `↓${branch.behind}` : ""].filter(Boolean).join(" ") || "in sync";
-    const changeCount = status.files.filter((file) => this.getSettings().git.showUntracked || !file.untracked).length;
+    const sync = branch.gone ? "upstream gone" : [branch.ahead ? `↑${branch.ahead}` : "", branch.behind ? `↓${branch.behind}` : ""].filter(Boolean).join(" ") || "synced";
+    const settings = this.getSettings();
+    const changeCount = status.files.filter((file) => settings.git.showUntracked || !file.untracked).length;
+    const workingCount = filesForScope(status.files, "working", settings.git.showUntracked).length;
+    const stagedCount = filesForScope(status.files, "staged", settings.git.showUntracked).length;
     const records = this.activity?.records ?? [];
     const mutations = records.filter((record) => record.kind === "edit" || record.kind === "write").length;
     const commands = records.filter((record) => ["bash", "test", "build", "lint"].includes(record.kind)).length;
     const checks = records.filter((record) => ["test", "build", "lint"].includes(record.kind)).length;
     const errors = records.filter((record) => record.status === "error").length;
-    lines.push(this.theme.fg(changeCount ? "warning" : "success", changeCount ? `${changeCount} files changed` : "✓ Working tree clean"));
-    lines.push(`${this.theme.fg("dim", "BRANCH  ")}${this.theme.fg("text", branch.name ?? "detached")}${this.theme.fg("dim", `  ·  ${sync}`)}`);
-    lines.push(`${this.theme.fg("dim", "SESSION ")}${this.theme.fg("text", `${records.length} actions`)}${this.theme.fg("dim", `  ·  ${mutations} mutations  ·  ${commands} commands  ·  ${checks} checks`)}${errors ? this.theme.fg("error", `  ·  ${errors} errors`) : ""}`);
-    const latest = records[0];
-    if (latest) {
+
+    lines.push(this.theme.fg(changeCount ? "warning" : "success", changeCount ? `${changeCount} changed · ${workingCount} working · ${stagedCount} staged` : "✓ Ready · working tree clean"));
+    lines.push(`${this.theme.fg("dim", "BRANCH  ")}${this.theme.fg("text", branch.name ?? "detached")}${this.theme.fg(branch.gone || branch.ahead || branch.behind ? "warning" : "dim", `  ·  ${sync}`)}`);
+    if (records.length === 0) {
+      lines.push(`${this.theme.fg("dim", "SESSION ")}${this.theme.fg("muted", "No AI activity captured yet")}`);
+      lines.push("");
+      lines.push(this.theme.fg("dim", changeCount ? "Tab switches Working/Staged · select a file for diff" : "Edits, commands, checks, and results appear here live"));
+    } else {
+      lines.push(`${this.theme.fg("dim", "SESSION ")}${this.theme.fg("text", `${records.length} actions`)}${this.theme.fg("dim", `  ·  ${mutations} edits  ·  ${commands} commands  ·  ${checks} checks`)}${errors ? this.theme.fg("error", `  ·  ${errors} errors`) : ""}`);
+      const latest = records[0]!;
       lines.push("");
       lines.push(`${this.theme.fg("dim", "LATEST  ")}${this.theme.fg("text", sanitizeTerminalLine(latest.what))}`);
       lines.push(`${this.theme.fg("dim", "RESULT  ")}${this.theme.fg(latest.status === "error" ? "error" : latest.status === "running" ? "warning" : "success", sanitizeTerminalLine(latest.result))}`);
     }
-    lines.push("");
-    lines.push(this.theme.fg("dim", "Click ↗ or double-click a file to open Neovim"));
+    if (changeCount > 0) {
+      lines.push("");
+      lines.push(this.theme.fg("dim", "Click ↗ or double-click a file to open Neovim"));
+    }
     while (lines.length < height) lines.push("");
     return lines.map((line) => truncateToWidth(line, width, "…")).slice(0, height);
   }

@@ -1,6 +1,6 @@
 {
   "name": "@pi-codeui/core",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Git-aware, keyboard-first terminal UI for Pi Coding Agent",
   "type": "module",
   "license": "MIT",

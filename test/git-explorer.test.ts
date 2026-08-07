@@ -98,6 +98,24 @@ test("docked extension widgets render and collapse inside the rail", async () =>
   explorer.dispose();
 });
 
+test("completed todo widgets auto-compact instead of filling the rail", async () => {
+  const widget = { render: () => ["○ Todos (24/24)", "├─ ✓ Old task", "└─ ✓ Verify polish"], invalidate: () => {} };
+  const explorer = new GitExplorer(controller([]), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, {
+    embedded: true,
+    getTerminalRows: () => 30,
+    getDockedWidgets: () => [widget],
+  });
+  await settle();
+  const compact = stripTerminalSequences(explorer.render(60).join("\n"));
+  assert.match(compact, /Todos 24\/24 complete/);
+  assert.doesNotMatch(compact, /Old task/);
+  assert.match(compact, /Ready · working tree clean/);
+  assert.doesNotMatch(compact, /0 actions|Click ↗/);
+  explorer.handleInput("w");
+  assert.match(stripTerminalSequences(explorer.render(60).join("\n")), /Old task/);
+  explorer.dispose();
+});
+
 test("double-clicking a changed file returns a Neovim action", async () => {
   let result: unknown;
   const explorer = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, (value) => { result = value; }, {
