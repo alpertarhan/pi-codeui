@@ -1,4 +1,5 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
+import type { QuickfixEntry } from "./external-editor.ts";
 import { Key, matchesKey, stripTerminalSequences, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type Focusable } from "@earendil-works/pi-tui";
 import { formatDuration, relativeTime, type ActivityRecord, type ActivityTracker, type Diagnostic } from "./activity.ts";
 import { applyPatchHunk, commitStaged, discardTrackedFile, getDiff, parsePatchHunks, previewUntracked, stageFile, unstageFile, validateCommitMessage, type DiffScope, type GitExec, type PatchHunk } from "./git/git.ts";
@@ -16,7 +17,10 @@ type WorkspaceSearchValue =
   | { kind: "file"; file: FileChange; scope: ExplorerScope }
   | { kind: "activity"; record: ActivityRecord }
   | { kind: "check"; diagnostic: Diagnostic };
-export type GitExplorerResult = { action: "edit"; root: string; path: string; line?: number; column?: number } | undefined;
+export type GitExplorerResult =
+  | { action: "edit"; root: string; path: string; line?: number; column?: number }
+  | { action: "quickfix"; root: string; entries: QuickfixEntry[] }
+  | undefined;
 export interface GitExplorerOptions {
   embedded?: boolean;
   confirm?: (title: string, message: string) => Promise<boolean>;
@@ -221,6 +225,10 @@ export class GitExplorer implements Focusable {
     }
     if (data === "C") {
       void this.composeCommit();
+      return;
+    }
+    if (data === "Q") {
+      this.openWorkspaceQuickfix();
       return;
     }
     if (this.view === "changes" && data === "s") {
@@ -554,6 +562,7 @@ export class GitExplorer implements Focusable {
     if (!file || this.fileActionRunning) return;
     const primary = this.scope === "working" ? (file.conflicted ? "Stage resolved file" : "Stage file") : "Unstage file";
     const options = [primary, "Open in Neovim"];
+    options.push("Open workspace quickfix");
     if ((this.repo()?.status.counts.staged ?? 0) > 0) options.push("Commit staged changes…");
     if (this.scope === "working" && !file.untracked && !file.conflicted && !file.oldPath) options.push("Discard working changes…");
     const choice = await this.selectMenu(`Actions · ${sanitizeTerminalLine(file.path)}`, options);
@@ -561,7 +570,8 @@ export class GitExplorer implements Focusable {
     else if (choice === "Open in Neovim") {
       const repo = this.repo();
       if (repo) this.dismiss({ action: "edit", root: repo.root, path: file.path });
-    } else if (choice === "Commit staged changes…") await this.composeCommit();
+    } else if (choice === "Open workspace quickfix") this.openWorkspaceQuickfix();
+    else if (choice === "Commit staged changes…") await this.composeCommit();
     else if (choice === "Discard working changes…") await this.runFileAction("discard");
   }
 
@@ -617,6 +627,48 @@ export class GitExplorer implements Focusable {
     } finally {
       this.fileActionRunning = false;
     }
+  }
+
+  private workspaceQuickfixEntries(): QuickfixEntry[] {
+    const repo = this.repo();
+    if (!repo) return [];
+    const entries: QuickfixEntry[] = (this.activity?.diagnostics ?? []).map((diagnostic) => ({
+      path: diagnostic.path,
+      line: diagnostic.line,
+      column: diagnostic.column,
+      message: `[${diagnostic.source.toUpperCase()}] ${diagnostic.message}`,
+      severity: diagnostic.severity,
+    }));
+    const showUntracked = this.getSettings().git.showUntracked;
+    for (const file of repo.status.files) {
+      if (!showUntracked && file.untracked) continue;
+      const states = [file.conflicted ? "conflict" : "", file.staged ? "staged" : "", file.unstaged ? "working" : "", file.untracked ? "untracked" : ""].filter(Boolean).join(" · ");
+      entries.push({
+        path: file.path,
+        line: 1,
+        column: 1,
+        message: `[Git ${file.index}${file.worktree}] ${states || "changed"}${file.oldPath ? ` · from ${file.oldPath}` : ""}`,
+        severity: file.conflicted ? "error" : file.untracked ? "warning" : "info",
+      });
+    }
+    const seen = new Set<string>();
+    return entries.filter((entry) => {
+      const key = `${entry.path}:${entry.line}:${entry.column ?? 1}:${entry.message}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  private openWorkspaceQuickfix(): void {
+    const repo = this.repo();
+    if (!repo) return;
+    const entries = this.workspaceQuickfixEntries();
+    if (!entries.length) {
+      this.setFileActionStatus("No changed files or check locations for quickfix", "warning");
+      return;
+    }
+    this.dismiss({ action: "quickfix", root: repo.root, entries });
   }
 
   private currentHunks(): PatchHunk[] {
@@ -791,8 +843,8 @@ export class GitExplorer implements Focusable {
     this.widgetDockStartRow = widgetDock.length > 0 ? content.length : -1;
     content.push(...widgetDock);
     const gitAction = this.focus === "diff" ? `n/p Hunk · s ${this.scope === "working" ? "Stage" : "Unstage"} hunk` : this.scope === "working" ? "s Stage · x Discard" : "s Unstage";
-    const fullHints = this.searchActive ? "Type to filter · ↑/↓ Select · Enter Reveal · Ctrl+O Open · Esc Close" : this.view === "changes" ? `j/k Move · ${gitAction} · C Commit · m Menu · e Open · / Search · q Back` : this.view === "activity" ? "g Changes · c Checks · j/k Move · e Open · / Search · q Back" : "g Changes · a Activity · j/k Move · e Open location · / Search · q Back";
-    const compactHints = this.searchActive ? "↑/↓ Select · Enter Reveal · ^O Open · Esc" : this.view === "changes" ? `${this.focus === "diff" ? "n/p Hunk · s Apply" : this.scope === "working" ? "s Stage" : "s Unstage"} · C Commit · e Open · / Find · q` : this.view === "activity" ? "g Git · c Checks · j/k · / Find · q" : "g Git · a Act · j/k · / Find · q";
+    const fullHints = this.searchActive ? "Type to filter · ↑/↓ Select · Enter Reveal · Ctrl+O Open · Esc Close" : this.view === "changes" ? `j/k Move · ${gitAction} · C Commit · Q Quickfix · e Open · / Search · q Back` : this.view === "activity" ? "g Changes · c Checks · j/k Move · Q Quickfix · e Open · / Search · q Back" : "g Changes · a Activity · j/k Move · Q Quickfix · e Open · / Search · q Back";
+    const compactHints = this.searchActive ? "↑/↓ Select · Enter Reveal · ^O Open · Esc" : this.view === "changes" ? `${this.focus === "diff" ? "n/p Hunk · s Apply" : this.scope === "working" ? "s Stage" : "s Unstage"} · C Commit · Q QF · / Find · q` : this.view === "activity" ? "g Git · c Checks · Q QF · / Find · q" : "g Git · a Act · Q QF · / Find · q";
     content.push(this.theme.fg("dim", visibleWidth(fullHints) <= inner ? fullHints : compactHints));
 
     const borderToken = this.focused ? "borderAccent" : "border";

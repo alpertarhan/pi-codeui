@@ -326,6 +326,21 @@ test("Checks view lists diagnostics and opens Neovim at the exact location", asy
   activity.dispose();
 });
 
+test("workspace quickfix combines exact diagnostics and every changed file", async () => {
+  const activity = new ActivityTracker("/repo");
+  activity.start({ type: "tool_execution_start", toolCallId: "quickfix-check", toolName: "bash", args: { command: "npm run typecheck" } }, 1);
+  activity.end({ type: "tool_execution_end", toolCallId: "quickfix-check", toolName: "bash", result: { content: [{ type: "text", text: "src/app.ts(12,5): error TS2322: Wrong type" }] }, isError: true }, 20);
+  let result: unknown;
+  const explorer = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, (value) => { result = value; }, { activity });
+  await settle();
+  explorer.handleInput("Q");
+  assert.equal((result as any)?.action, "quickfix");
+  assert.deepEqual((result as any)?.entries[0], { path: "src/app.ts", line: 12, column: 5, message: "[LINT] Wrong type", severity: "error" });
+  assert.ok((result as any)?.entries.some((entry: { path: string; severity: string }) => entry.path === "both.ts" && entry.severity === "info"));
+  assert.ok((result as any)?.entries.some((entry: { path: string; severity: string }) => entry.path === "conflict.ts" && entry.severity === "error"));
+  activity.dispose();
+});
+
 test("workspace search filters every rail source and opens exact results", async () => {
   const activity = new ActivityTracker("/repo");
   activity.start({ type: "tool_execution_start", toolCallId: "check-search", toolName: "bash", args: { command: "npm run typecheck" } }, 1);

@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { resolveRepoFile, runExternalEditor } from "../src/external-editor.ts";
+import { resolveRepoFile, runExternalEditor, runExternalQuickfix } from "../src/external-editor.ts";
 import { VimEditor } from "../src/vim-editor.ts";
 
 const keyMap: Record<string, string[]> = {
@@ -54,6 +55,35 @@ test("Vim editor switches modes, ignores normal text, and maps core motions", ()
   assert.ok(renders >= 2);
   const lines = editor.render(40);
   assert.match(lines.at(-1) ?? "", /NORMAL/);
+});
+
+test("Neovim quickfix bridge loads repo-contained JSON and cleans it", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "pi-codeui-qf-test-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  let listPath = "";
+  let entries: unknown;
+  let invocation: { command: string; args: readonly string[] } | undefined;
+  const result = await runExternalQuickfix(["nvim", "-f"], root, [
+    { path: "src/app.ts", line: 12, column: 5, message: "Wrong type", severity: "error" },
+    { path: "test/app.test.ts", line: 3, message: "Expected true", severity: "warning" },
+  ], (command, args) => {
+    invocation = { command, args };
+    const load = args[args.indexOf("--cmd") + 1] ?? "";
+    listPath = /readfile\('([^']+)'\)/.exec(load)?.[1] ?? "";
+    entries = JSON.parse(readFileSync(listPath, "utf8"));
+    return { status: 0 };
+  });
+  assert.equal(result.status, 0);
+  assert.equal(invocation?.command, "nvim");
+  assert.deepEqual(invocation?.args.slice(-4), ["-c", "copen", "-c", "cc"]);
+  assert.deepEqual(entries, [
+    { filename: join(root, "src/app.ts"), lnum: 12, col: 5, text: "Wrong type", type: "E", valid: 1 },
+    { filename: join(root, "test/app.test.ts"), lnum: 3, col: 1, text: "Expected true", type: "W", valid: 1 },
+  ]);
+  assert.equal(existsSync(listPath), false);
+  assert.match((await runExternalQuickfix(["nvim"], root, [])).error ?? "", /No workspace locations/);
+  assert.match((await runExternalQuickfix(["code"], root, [{ path: "src/app.ts", line: 1, message: "changed" }])).error ?? "", /requires Vim or Neovim/);
+  assert.match((await runExternalQuickfix(["nvim"], root, [{ path: "../outside", line: 1, message: "bad" }])).error ?? "", /outside the repository/);
 });
 
 test("non-modal CodeUI editor preserves normal typing and shows prompt chrome", () => {

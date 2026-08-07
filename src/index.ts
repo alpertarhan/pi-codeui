@@ -4,7 +4,7 @@ import { ActivityTracker } from "./activity.ts";
 import { createChangesWidget } from "./changes-widget.ts";
 import { chromeContext, createChromeBar } from "./chrome.ts";
 import { getSettingsPaths } from "./config.ts";
-import { openExternalEditor } from "./external-editor.ts";
+import { openExternalEditor, openExternalQuickfix } from "./external-editor.ts";
 import { GitExplorer, type GitExplorerResult } from "./git-explorer.ts";
 import { GitStateController } from "./git-state.ts";
 import { resolveGlyphs } from "./glyphs.ts";
@@ -106,9 +106,11 @@ export default function codeui(pi: ExtensionAPI): void {
   };
 
   const handleExplorerAction = async (active: Runtime, result: Exclude<GitExplorerResult, undefined>): Promise<void> => {
-    if (result.action !== "edit" || runtime !== active) return;
+    if (runtime !== active) return;
     const editor = active.settings.current.vim.externalEditor;
-    const editorResult = await openExternalEditor(active.ctx, editor, result.root, result.path, result.line ? { line: result.line, column: result.column } : undefined);
+    const editorResult = result.action === "quickfix"
+      ? await openExternalQuickfix(active.ctx, editor, result.root, result.entries)
+      : await openExternalEditor(active.ctx, editor, result.root, result.path, result.line ? { line: result.line, column: result.column } : undefined);
     if (runtime !== active) return;
     if (editorResult.error) active.ctx.ui.notify(`External editor failed: ${sanitizeTerminalLine(editorResult.error)}`, "error");
     else if (editorResult.status !== 0) active.ctx.ui.notify(`External editor exited with status ${editorResult.status ?? "unknown"}.`, "warning");
