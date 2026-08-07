@@ -36,6 +36,18 @@ test("activity tracker explains what, why, how, and result", () => {
   tracker.dispose();
 });
 
+test("developer commands are classified as tests, builds, and validation", () => {
+  const tracker = new ActivityTracker("/repo");
+  tracker.start({ type: "tool_execution_start", toolCallId: "test", toolName: "bash", args: { command: "pnpm test" } }, 1);
+  tracker.end({ type: "tool_execution_end", toolCallId: "test", toolName: "bash", result: { content: [{ type: "text", text: "setup\n49 tests passed" }] }, isError: false }, 101);
+  tracker.start({ type: "tool_execution_start", toolCallId: "lint", toolName: "bash", args: { command: "npm run typecheck" } }, 200);
+  tracker.start({ type: "tool_execution_start", toolCallId: "build", toolName: "bash", args: { command: "cargo build" } }, 300);
+  assert.equal(tracker.records.find((record) => record.id === "test")?.kind, "test");
+  assert.match(tracker.records.find((record) => record.id === "test")?.result ?? "", /49 tests passed/);
+  assert.equal(tracker.records.find((record) => record.id === "lint")?.kind, "lint");
+  assert.equal(tracker.records.find((record) => record.id === "build")?.kind, "build");
+});
+
 test("activity history is newest-first, bounded, and sanitized", () => {
   const tracker = new ActivityTracker("/repo", 2);
   for (let index = 0; index < 3; index++) {

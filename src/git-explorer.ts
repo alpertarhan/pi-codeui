@@ -192,7 +192,7 @@ export class GitExplorer implements Focusable {
     const border = BORDER_PRESETS[settings.appearance.borders];
     const density = DENSITY_PRESETS[settings.appearance.density];
     const edge = visibleWidth(border.vertical);
-    const inner = Math.max(1, width - edge * 2);
+    const inner = Math.max(1, width - edge * (this.embedded ? 1 : 2));
     const terminalRows = this.getTerminalRows();
     const maxRows = this.embedded ? Math.max(5, terminalRows - this.reservedRows) : Math.max(5, Math.floor(terminalRows * 0.85));
     const gap = density.gap > 0 && maxRows >= 12;
@@ -204,7 +204,7 @@ export class GitExplorer implements Focusable {
     const now = this.renderNow(inner, maxRows >= 9 ? 2 : maxRows >= 7 ? 1 : 0);
     content.push(...now);
     if (gap) content.push("");
-    const bodyHeight = Math.max(1, maxRows - 4 - now.length - (gap ? 2 : 0));
+    const bodyHeight = Math.max(1, maxRows - (this.embedded ? 2 : 4) - now.length - (gap ? 2 : 0));
 
     const renderList = (panelWidth: number, height: number) => this.view === "changes" ? this.renderList(panelWidth, height) : this.renderActivityList(panelWidth, height);
     const renderDetail = (panelWidth: number, height: number) => this.view === "changes" ? this.renderDiff(panelWidth, height) : this.renderActivityDetail(panelWidth, height);
@@ -229,8 +229,10 @@ export class GitExplorer implements Focusable {
     const compactHints = this.view === "changes" ? "a activity  j/k  Tab  e  r  q" : "g changes  j/k  Enter  e  q";
     content.push(this.theme.fg("dim", visibleWidth(fullHints) <= inner ? fullHints : compactHints));
 
-    const framed = content.map((line) => this.theme.fg("border", border.vertical) + fit(line, inner) + this.theme.fg("border", border.vertical));
-    const horizontal = (left: string, right: string) => this.theme.fg("border", truncateToWidth(`${left}${border.horizontal.repeat(Math.max(0, width - visibleWidth(left) - visibleWidth(right)))}${right}`, width, ""));
+    const borderToken = this.focused ? "borderAccent" : "border";
+    if (this.embedded) return content.map((line) => this.theme.fg(borderToken, border.vertical) + fit(line, inner));
+    const framed = content.map((line) => this.theme.fg(borderToken, border.vertical) + fit(line, inner) + this.theme.fg(borderToken, border.vertical));
+    const horizontal = (left: string, right: string) => this.theme.fg(borderToken, truncateToWidth(`${left}${border.horizontal.repeat(Math.max(0, width - visibleWidth(left) - visibleWidth(right)))}${right}`, width, ""));
     return [horizontal(border.topLeft, border.topRight), ...framed, horizontal(border.bottomLeft, border.bottomRight)];
   }
 
@@ -434,8 +436,9 @@ export class GitExplorer implements Focusable {
 
   private renderDiff(width: number, height: number): string[] {
     const file = this.files[this.selected];
+    if (!file) return this.renderWorkspaceOverview(width, height);
     const truncated = this.diff.kind === "ready" && this.diff.truncated ? this.theme.fg("warning", " [truncated]") : "";
-    const lines = [this.theme.fg(this.focus === "diff" ? "accent" : "muted", `${this.focus === "diff" ? "▶" : " "} DIFF  ${sanitizeTerminalLine(file?.path ?? "Select a file")}`) + truncated];
+    const lines = [this.theme.fg(this.focus === "diff" ? "accent" : "muted", `${this.focus === "diff" ? "▶" : " "} DIFF  ${sanitizeTerminalLine(file.path)}`) + truncated];
     const bodyHeight = Math.max(1, height - 1);
     this.lastDiffPage = Math.max(1, bodyHeight - 1);
     if (this.diff.kind === "loading") lines.push(this.theme.fg("dim", "Loading diff…"));
@@ -451,6 +454,34 @@ export class GitExplorer implements Focusable {
     }
     while (lines.length < height) lines.push("");
     return lines.slice(0, height);
+  }
+
+  private renderWorkspaceOverview(width: number, height: number): string[] {
+    const repo = this.repo();
+    const lines = [this.theme.fg(this.focus === "diff" ? "accent" : "muted", `${this.focus === "diff" ? "▶" : " "} WORKSPACE OVERVIEW`)];
+    if (!repo) return [...lines, this.theme.fg("muted", "No Git repository")].slice(0, height);
+    const status = repo.status;
+    const branch = status.branch;
+    const sync = branch.gone ? "upstream gone" : [branch.ahead ? `↑${branch.ahead}` : "", branch.behind ? `↓${branch.behind}` : ""].filter(Boolean).join(" ") || "in sync";
+    const changeCount = status.files.filter((file) => this.getSettings().git.showUntracked || !file.untracked).length;
+    const records = this.activity?.records ?? [];
+    const mutations = records.filter((record) => record.kind === "edit" || record.kind === "write").length;
+    const commands = records.filter((record) => ["bash", "test", "build", "lint"].includes(record.kind)).length;
+    const checks = records.filter((record) => ["test", "build", "lint"].includes(record.kind)).length;
+    const errors = records.filter((record) => record.status === "error").length;
+    lines.push(this.theme.fg(changeCount ? "warning" : "success", changeCount ? `${changeCount} files changed` : "✓ Working tree clean"));
+    lines.push(`${this.theme.fg("dim", "BRANCH  ")}${this.theme.fg("text", branch.name ?? "detached")}${this.theme.fg("dim", `  ·  ${sync}`)}`);
+    lines.push(`${this.theme.fg("dim", "SESSION ")}${this.theme.fg("text", `${records.length} actions`)}${this.theme.fg("dim", `  ·  ${mutations} mutations  ·  ${commands} commands  ·  ${checks} checks`)}${errors ? this.theme.fg("error", `  ·  ${errors} errors`) : ""}`);
+    const latest = records[0];
+    if (latest) {
+      lines.push("");
+      lines.push(`${this.theme.fg("dim", "LATEST  ")}${this.theme.fg("text", sanitizeTerminalLine(latest.what))}`);
+      lines.push(`${this.theme.fg("dim", "RESULT  ")}${this.theme.fg(latest.status === "error" ? "error" : latest.status === "running" ? "warning" : "success", sanitizeTerminalLine(latest.result))}`);
+    }
+    lines.push("");
+    lines.push(this.theme.fg("dim", "a Activity timeline  ·  Tab Working/Staged"));
+    while (lines.length < height) lines.push("");
+    return lines.map((line) => truncateToWidth(line, width, "…")).slice(0, height);
   }
 
   private scrollDiff(delta: number): void {

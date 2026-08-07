@@ -45,7 +45,10 @@ export class VimEditor extends CustomEditor {
     super(tui, theme, keybindings);
     this.vimOptions = vimOptions;
     this.mode = vimOptions.startMode;
-    if (vimOptions.styleBorder) this.borderColor = (text) => vimOptions.styleBorder!(this.mode, text);
+    if (vimOptions.styleBorder) {
+      const border = (text: string) => vimOptions.styleBorder!(this.mode, text);
+      Object.defineProperty(this, "borderColor", { configurable: true, get: () => border, set: () => {} });
+    }
   }
 
   getMode(): VimMode {

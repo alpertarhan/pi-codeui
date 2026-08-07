@@ -222,7 +222,10 @@ test("Explorer row count responds to terminal height", async () => {
     Object.defineProperty(process.stdout, "rows", { configurable: true, value: 24 });
     const embedded = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, { embedded: true });
     await settle();
-    assert.equal(embedded.render(50).length, 24);
+    const embeddedLines = embedded.render(50);
+    assert.equal(embeddedLines.length, 24);
+    assert.match(stripTerminalSequences(embeddedLines[0] ?? ""), /GIT EXPLORER/);
+    assert.doesNotMatch(stripTerminalSequences(embeddedLines[0] ?? ""), /[╭┌]/);
     embedded.dispose();
   } finally {
     Object.defineProperty(process.stdout, "rows", { configurable: true, value: original });

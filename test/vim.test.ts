@@ -61,12 +61,16 @@ test("non-modal CodeUI editor preserves normal typing and shows prompt chrome", 
     { requestRender: () => {}, terminal: { rows: 24, columns: 80 } } as any,
     editorTheme as any,
     keybindings as any,
-    { startMode: "insert", modal: false, label: "PROMPT" },
+    { startMode: "insert", modal: false, label: "PROMPT", styleBorder: (_mode, text) => `SAFE${text}` },
   );
+  editor.borderColor = (text) => `RED${text}`;
   editor.setText("hello");
   editor.handleInput("!");
   assert.equal(editor.getText(), "hello!");
-  assert.match(editor.render(40).at(-1) ?? "", /PROMPT/);
+  const rendered = editor.render(40).join("\n");
+  assert.match(rendered, /PROMPT/);
+  assert.match(rendered, /SAFE/);
+  assert.doesNotMatch(rendered, /RED/);
 });
 
 test("external editor argv is shell-free and repository-contained", async () => {

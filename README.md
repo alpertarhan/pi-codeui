@@ -115,6 +115,8 @@ Inside Pi:
 - A global CodeUI header/footer spans both columns; the prompt uses a bordered `PROMPT` editor, or `NORMAL`/`INSERT` when Vim mode is enabled.
 - The footer shows session input/output, latest-turn usage, cached tokens, total tokens, and live context-window usage with warning/error thresholds.
 - The sidebar continuously exposes the AI's current action, its latest stated rationale, and a newest-first developer activity timeline.
+- The fullscreen sidebar is an integrated rail joined directly to the global header/footer rather than a floating box; clean repositories show a workspace/session overview instead of an empty diff pane.
+- Test, build, typecheck, and lint commands receive first-class activity labels and surface useful result lines.
 - `/codeui` or `Ctrl+Shift+G` focuses the split panel, or opens the fallback Explorer.
 - `/codeui-refresh` refreshes repository state.
 - `/codeui-vim` toggles embedded Vim mode for the current session.

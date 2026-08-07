@@ -9,7 +9,7 @@ import type { FileChange } from "./git/types.ts";
 import { sanitizeTerminalLine } from "./terminal.ts";
 
 export type ActivityStatus = "running" | "success" | "error";
-export type ActivityKind = "read" | "edit" | "write" | "bash" | "search" | "other";
+export type ActivityKind = "read" | "edit" | "write" | "bash" | "test" | "build" | "lint" | "search" | "other";
 
 export interface ActivityRecord {
   id: string;
@@ -42,7 +42,9 @@ const resultText = (result: unknown): string | undefined => {
   const content = (result as { content?: unknown }).content;
   if (!Array.isArray(content)) return undefined;
   const text = content.find((part) => part && typeof part === "object" && (part as { type?: string }).type === "text") as { text?: string } | undefined;
-  return text?.text ? compact(text.text.split("\n")[0], 160) : undefined;
+  if (!text?.text) return undefined;
+  const lines = text.text.split("\n").map((line) => compact(line, 160)).filter(Boolean);
+  return lines.findLast((line) => /\b(pass(?:ed)?|fail(?:ed)?|error|tests?|built|compiled|typecheck|lint)\b/i.test(line)) ?? lines[0];
 };
 
 export class ActivityTracker {
@@ -180,8 +182,19 @@ export class ActivityTracker {
       return { kind: "read", what: `Inspecting ${path ?? "a file"}`, how: `Read-only inspection${range}` };
     }
     if (toolName === "bash") {
-      const command = compact(args.command, 120);
-      return { kind: "bash", what: `Running ${command || "a shell command"}`, how: `Shell execution${args.timeout ? ` · timeout ${args.timeout}ms` : ""}` };
+      const command = compact(args.command, 160);
+      const lower = command.toLowerCase();
+      const timeout = args.timeout ? ` · timeout ${args.timeout}ms` : "";
+      if (/((npm|pnpm|yarn|bun)\s+(run\s+)?test|node\s+--test|vitest|jest|pytest|cargo\s+test|go\s+test)/.test(lower)) {
+        return { kind: "test", what: "Running the test suite", how: `${command}${timeout}` };
+      }
+      if (/((npm|pnpm|yarn|bun)\s+(run\s+)?build|cargo\s+build|go\s+build)/.test(lower)) {
+        return { kind: "build", what: "Building the project", how: `${command}${timeout}` };
+      }
+      if (/(tsc|typecheck|eslint|biome\s+check|\blint\b)/.test(lower)) {
+        return { kind: "lint", what: "Validating code quality", how: `${command}${timeout}` };
+      }
+      return { kind: "bash", what: `Running ${command || "a shell command"}`, how: `Shell execution${timeout}` };
     }
     if (toolName === "grep" || toolName === "find" || toolName === "ls") {
       return { kind: "search", what: `${toolName === "grep" ? "Searching code" : toolName === "find" ? "Finding files" : "Listing files"}`, how: compact(JSON.stringify(args), 140) };
