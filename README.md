@@ -113,6 +113,7 @@ Inside Pi:
 
 - In fullscreen mode, Git Explorer remains mounted as a true right-side split and Pi's transcript/editor reflows on the left.
 - A global CodeUI header/footer spans both columns; the prompt uses a bordered `PROMPT` editor, or `NORMAL`/`INSERT` when Vim mode is enabled.
+- The footer shows session input/output, latest-turn usage, cached tokens, total tokens, and live context-window usage with warning/error thresholds.
 - `/codeui` or `Ctrl+Shift+G` focuses the split panel, or opens the fallback Explorer.
 - `/codeui-refresh` refreshes repository state.
 - `/codeui-vim` toggles embedded Vim mode for the current session.

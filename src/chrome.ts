@@ -6,6 +6,7 @@ import type { GitStateController, GitViewState } from "./git-state.ts";
 import { resolveGlyphs } from "./glyphs.ts";
 import type { CodeuiSettings } from "./settings.ts";
 import { sanitizeTerminalLine } from "./terminal.ts";
+import { calculateUsageSnapshot, formatTokens, type UsageSnapshot } from "./usage.ts";
 
 const fit = (text: string, width: number, align: "left" | "center" | "right" = "left"): string => {
   const value = truncateToWidth(text, Math.max(0, width), "…");
@@ -41,6 +42,7 @@ export interface ChromeRenderContext {
   model?: string;
   thinking?: string;
   agentRunning: boolean;
+  usage: UsageSnapshot;
 }
 
 export function renderChromeHeader(
@@ -74,10 +76,13 @@ export function renderChromeFooter(
     const count = ready.status.files.filter((file) => settings.git.showUntracked || !file.untracked).length;
     git = count ? `${count} changed  +${ready.working.added + ready.cached.added}/-${ready.working.deleted + ready.cached.deleted}` : "✓ clean";
   } else if (state.kind === "error") git = "git error";
-  const left = theme.fg("dim", projectPath(context.cwd));
-  const center = theme.fg(ready?.kind === "repo" && ready.status.files.length === 0 ? "success" : "muted", git);
+  const left = `${theme.fg("dim", projectPath(context.cwd))}${theme.fg("muted", `  ·  ${git}`)}`;
+  const center = renderUsageMetrics(context.usage, theme, width < 160);
   const right = `${theme.fg("accent", context.model ?? "no-model")}${context.thinking ? theme.fg("dim", `  ·  ${context.thinking}`) : ""}`;
-  return [theme.fg("border", "─".repeat(width)), columns(left, center, right, width)];
+  const leftWidth = Math.floor(width * 0.2);
+  const centerWidth = Math.floor(width * 0.6);
+  const content = `${fit(left, leftWidth)}${fit(center, centerWidth, "center")}${fit(right, width - leftWidth - centerWidth, "right")}`;
+  return [theme.fg("border", "─".repeat(width)), content];
 }
 
 export function createChromeBar(
@@ -98,11 +103,31 @@ export function createChromeBar(
   };
 }
 
+export function renderUsageMetrics(usage: UsageSnapshot, theme: Theme, compact: boolean): string {
+  const contextColor = (usage.contextPercent ?? 0) > 90 ? "error" : (usage.contextPercent ?? 0) > 70 ? "warning" : "accent";
+  const contextValue = `${usage.contextTokens === null ? "?" : formatTokens(usage.contextTokens)}/${formatTokens(usage.contextWindow)}${usage.contextPercent === null ? "" : ` ${usage.contextPercent.toFixed(0)}%`}`;
+  const values = compact
+    ? [
+        ["I", usage.session.input, "accent"], ["O", usage.session.output, "success"],
+        ["T", usage.turn.total, "thinkingHigh"], ["C", usage.session.cached, "warning"],
+        ["Σ", usage.session.total, "text"],
+      ] as const
+    : [
+        ["IN ", usage.session.input, "accent"], ["OUT ", usage.session.output, "success"],
+        ["TURN ", usage.turn.total, "thinkingHigh"], ["CACHE ", usage.session.cached, "warning"],
+        ["TOTAL ", usage.session.total, "text"],
+      ] as const;
+  const metrics = values.map(([label, value, color]) => `${theme.fg("dim", label)}${theme.fg(color, formatTokens(value))}`);
+  metrics.push(`${theme.fg("dim", compact ? "CTX " : "CONTEXT ")}${theme.fg(contextColor, contextValue)}`);
+  return metrics.join(theme.fg("dim", compact ? " " : "  ·  "));
+}
+
 export function chromeContext(ctx: ExtensionContext, agentRunning: boolean): ChromeRenderContext {
   return {
     cwd: ctx.cwd,
     model: ctx.model?.id,
     thinking: ctx.thinkingLevel,
     agentRunning,
+    usage: calculateUsageSnapshot(ctx.sessionManager, ctx.getContextUsage(), ctx.model?.contextWindow ?? 0),
   };
 }
