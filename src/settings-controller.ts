@@ -1,5 +1,5 @@
-import { watch, type FSWatcher } from "node:fs";
-import { dirname } from "node:path";
+import { unwatchFile, watch, watchFile, type FSWatcher, type Stats } from "node:fs";
+import { basename, dirname } from "node:path";
 import { loadSettings, type SettingsPaths } from "./config.ts";
 import { cloneSettings, DEFAULT_SETTINGS, type CodeuiSettings } from "./settings.ts";
 
@@ -11,6 +11,7 @@ export interface SettingsControllerUI {
 export class SettingsController {
   static readonly statusKey = "pi-codeui.settings";
   private watchers: FSWatcher[] = [];
+  private fallbackWatchers: Array<{ path: string; listener: (current: Stats, previous: Stats) => void }> = [];
   private timer: NodeJS.Timeout | undefined;
   private disposed = false;
   private hasLoaded = false;
@@ -37,18 +38,39 @@ export class SettingsController {
     this.disposed = false;
     await this.reload(false);
     if (!enableWatch || this.disposed) return;
-    const directories = [dirname(this.paths.global), ...(this.projectTrusted ? [dirname(this.paths.project)] : [])];
-    for (const directory of new Set(directories)) {
+    const configPaths = [this.paths.global, ...(this.projectTrusted ? [this.paths.project] : [])];
+    const pathsByDirectory = new Map<string, string[]>();
+    for (const path of configPaths) {
+      const directory = dirname(path);
+      pathsByDirectory.set(directory, [...(pathsByDirectory.get(directory) ?? []), path]);
+    }
+    for (const [directory, paths] of pathsByDirectory) {
       try {
         this.watchers.push(watch(directory, (_event, filename) => {
-          if (filename && !filename.toString().startsWith("codeui.settings.json")) return;
-          clearTimeout(this.timer);
-          this.timer = setTimeout(() => void this.reload(true), this.debounceMs);
+          if (filename && !paths.some((path) => filename.toString().startsWith(basename(path)))) return;
+          this.scheduleReload();
         }));
       } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+          for (const path of paths) {
+            const listener = (current: Stats, previous: Stats): void => {
+              if (current.mtimeMs !== previous.mtimeMs || current.size !== previous.size || current.nlink !== previous.nlink) {
+                this.scheduleReload();
+              }
+            };
+            watchFile(path, { interval: 500, persistent: false }, listener);
+            this.fallbackWatchers.push({ path, listener });
+          }
+          continue;
+        }
         this.ui?.notify(`pi-codeui cannot watch ${directory}: ${(error as Error).message}`, "warning");
       }
     }
+  }
+
+  private scheduleReload(): void {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => void this.reload(true), this.debounceMs);
   }
 
   async reload(live = true): Promise<boolean> {
@@ -82,6 +104,8 @@ export class SettingsController {
     this.timer = undefined;
     for (const watcher of this.watchers) watcher.close();
     this.watchers = [];
+    for (const { path, listener } of this.fallbackWatchers) unwatchFile(path, listener);
+    this.fallbackWatchers = [];
     this.ui?.setStatus(SettingsController.statusKey, undefined);
   }
 }

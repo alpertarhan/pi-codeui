@@ -114,6 +114,30 @@ test("successful live reload clears a stale initial settings status", async (t) 
   controller.dispose();
 });
 
+test("missing project config directory is quiet and detected when later created", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "pi-codeui-missing-project-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const paths = {
+    root,
+    global: join(root, "agent", "codeui.settings.json"),
+    project: join(root, "work", ".pi", "codeui.settings.json"),
+  };
+  await mkdir(join(root, "agent"), { recursive: true });
+  await mkdir(join(root, "work"), { recursive: true });
+  const notifications: string[] = [];
+  const controller = new SettingsController(paths, true, {
+    notify: (message) => notifications.push(message),
+    setStatus: () => {},
+  }, 20);
+  t.after(() => controller.dispose());
+
+  await controller.start();
+  assert.equal(notifications.some((message) => message.includes("cannot watch")), false);
+  await mkdir(join(root, "work", ".pi"));
+  await writeFile(paths.project, JSON.stringify({ widget: { maxFiles: 8 } }));
+  await eventually(() => controller.current.widget.maxFiles === 8, 3000);
+});
+
 test("watcher handles atomic replacement, preserves invalid live settings, and stops", async (t) => {
   const paths = await fixture();
   t.after(() => rm(paths.root, { recursive: true, force: true }));
