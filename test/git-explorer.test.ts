@@ -64,6 +64,22 @@ test("Explorer scopes include the right staged, working, conflict, and untracked
   assert.deepEqual(filesForScope(files, "working", false).map((file) => file.path), ["both.ts", "working.ts", "conflict.ts"]);
 });
 
+test("embedded Explorer supports mouse tabs, scopes, and row selection", async () => {
+  const explorer = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, {
+    embedded: true,
+    getTerminalRows: () => 24,
+    activity: new ActivityTracker("/repo"),
+  });
+  await settle();
+  assert.equal(explorer.handleMouse(16, 2, 60), true);
+  assert.equal(explorer.scope, "staged");
+  explorer.handleMouse(5, 4, 60);
+  assert.equal(explorer.selected, 1);
+  explorer.handleMouse(58, 0, 60);
+  assert.match(stripTerminalSequences(explorer.render(60).join("\n")), /ACTIVITY\s+0/);
+  explorer.dispose();
+});
+
 test("Explorer returns a safe external-editor action for the selected file", async () => {
   let result: unknown;
   const explorer = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, (value) => { result = value; });

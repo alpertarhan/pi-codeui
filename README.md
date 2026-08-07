@@ -123,7 +123,7 @@ Inside Pi:
 - `/codeui-doctor` reports active customization and editor settings.
 - `/reload` reloads the extension and Pi resources.
 
-Git Explorer controls: `j`/`k` or arrows select; `a` opens Activity; `g` returns to Changes; `Tab` switches Working/Staged; `Enter` toggles list/detail focus; `PageUp`/`PageDown` or `Ctrl+U`/`Ctrl+D` scroll details; `e` opens the selected file in Neovim; `r` refreshes; `q`/`Escape` returns focus to Pi's editor while the split stays visible. Regular TUI mode, narrow terminals, and `explorer.layout: "overlay"` use the existing overlay/dashboard fallback.
+Git Explorer controls: click anywhere in the fullscreen rail to focus it; Changes/Activity tabs, Working/Staged scope, and file/activity rows are mouse-selectable, and the wheel follows the clicked list/detail region. Keyboard controls remain: `j`/`k` or arrows select; `a` opens Activity; `g` returns to Changes; `Tab` switches Working/Staged; `Enter` toggles list/detail focus; `PageUp`/`PageDown` or `Ctrl+U`/`Ctrl+D` scroll details; `e` opens the selected file in Neovim; `r` refreshes; `q`/`Escape` returns focus to Pi's editor while the split stays visible. Regular TUI mode, narrow terminals, and `explorer.layout: "overlay"` use the existing overlay/dashboard fallback.
 
 The always-visible `NOW`/`WHY` card is derived from Pi's assistant narrative and tool lifecycle events. Activity records are session-local, bounded, display-only, and never injected into model context. The Activity detail panel explains `WHAT`, `WHY`, `HOW`, and `RESULT`; edit/write timestamps also order changed files newest-first and mark files currently being edited.
 

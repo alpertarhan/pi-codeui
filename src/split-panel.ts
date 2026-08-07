@@ -5,6 +5,7 @@ import {
   isViewportTUI,
   type Component,
   type TUI,
+  type TuiInputListener,
   type ViewportTUI,
 } from "@earendil-works/pi-tui";
 import type { ActivityTracker } from "./activity.ts";
@@ -16,6 +17,7 @@ import type { CodeuiSettings } from "./settings.ts";
 type InternalViewportTui = ViewportTUI & {
   layoutRoot?: Component;
   getFocusedComponent?: () => Component | null;
+  inputListeners?: Set<TuiInputListener>;
 };
 
 type DisposableComponent = Component & { dispose?(): void };
@@ -46,6 +48,7 @@ export class SplitPanelController {
   private panel: GitExplorer | undefined;
   private previousFocus: Component | null = null;
   private panelColumns = 0;
+  private unsubscribeMouse: (() => void) | undefined;
   private disposed = false;
 
   constructor(tui: TUI, options: SplitPanelOptions) {
@@ -83,6 +86,7 @@ export class SplitPanelController {
     }
 
     const internal = this.tui as InternalViewportTui;
+    this.installMouseListener();
     if (this.installed) {
       const columns = this.getPanelColumns();
       if (columns !== this.panelColumns) this.mount(this.originalRoot!, this.panel!, columns);
@@ -100,7 +104,8 @@ export class SplitPanelController {
   focus(): boolean {
     if (!this.ensure() || !this.panel) return false;
     const internal = this.tui as InternalViewportTui;
-    this.previousFocus = internal.getFocusedComponent?.() ?? null;
+    const current = internal.getFocusedComponent?.() ?? null;
+    if (current !== this.panel) this.previousFocus = current;
     this.tui.setFocus(this.panel);
     this.tui.requestRender();
     return true;
@@ -118,6 +123,42 @@ export class SplitPanelController {
     this.options.header?.dispose?.();
     this.options.footer?.dispose?.();
     this.disposed = true;
+  }
+
+  private installMouseListener(): void {
+    if (this.unsubscribeMouse || !isViewportTUI(this.tui)) return;
+    const listener: TuiInputListener = (data) => {
+      if (!this.installed || !this.panel) return undefined;
+      const match = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/.exec(data);
+      if (!match) return undefined;
+      const button = Number(match[1]);
+      const x = Number(match[2]) - 1;
+      const y = Number(match[3]) - 1;
+      const panelStart = this.tui.terminal.columns - this.panelColumns;
+      const headerRows = this.options.header ? 2 : 0;
+      const footerRows = this.options.footer ? 2 : 0;
+      const panelRows = this.tui.terminal.rows - headerRows - footerRows;
+      if (x < panelStart || y < headerRows || y >= headerRows + panelRows) return undefined;
+      if ((button & 32) !== 0) return { consume: true };
+      const release = match[4] === "m";
+      if (!release) {
+        this.focus();
+        const localX = x - panelStart;
+        const localY = y - headerRows;
+        this.panel.handleMouse(localX, localY, this.panelColumns);
+        if ((button & 64) !== 0) this.panel.handleInput((button & 3) === 0 ? "k" : "j");
+      }
+      return { consume: true };
+    };
+    this.unsubscribeMouse = this.tui.addInputListener(listener);
+    const internal = this.tui as InternalViewportTui;
+    const listeners = internal.inputListeners;
+    if (listeners?.has(listener)) {
+      const existing = [...listeners].filter((candidate) => candidate !== listener);
+      listeners.clear();
+      listeners.add(listener);
+      for (const candidate of existing) listeners.add(candidate);
+    }
   }
 
   private createPanel(): GitExplorer {
@@ -172,6 +213,8 @@ export class SplitPanelController {
   }
 
   private restore(): void {
+    this.unsubscribeMouse?.();
+    this.unsubscribeMouse = undefined;
     this.panel?.dispose();
     this.panel = undefined;
     if (this.originalRoot && this.splitRoot && isViewportTUI(this.tui)) {

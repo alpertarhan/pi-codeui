@@ -185,6 +185,65 @@ export class GitExplorer implements Focusable {
     else if (down || up) this.select(this.selected + (down ? 1 : -1));
   }
 
+  handleMouse(x: number, y: number, width: number): boolean {
+    if (!this.embedded || width < 4 || x < 0 || y < 0) return false;
+    const settings = this.getSettings();
+    const border = BORDER_PRESETS[settings.appearance.borders];
+    const density = DENSITY_PRESETS[settings.appearance.density];
+    const inner = Math.max(1, width - visibleWidth(border.vertical));
+    const localX = Math.max(0, x - visibleWidth(border.vertical));
+    const maxRows = Math.max(5, this.getTerminalRows() - this.reservedRows);
+    const gap = density.gap > 0 && maxRows >= 12;
+    const nowLines = maxRows >= 9 ? (this.activity?.current ? 2 : 1) : maxRows >= 7 ? 1 : 0;
+    const bodyStart = 1 + nowLines + (gap ? 1 : 0);
+    const bodyHeight = Math.max(1, maxRows - 2 - nowLines - (gap ? 2 : 0));
+
+    if (y === 0) {
+      if (localX >= inner - 8) this.view = "activity";
+      else if (localX >= inner - 18) this.view = "changes";
+      this.focus = "list";
+      this.requestRender();
+      return true;
+    }
+    if (y < bodyStart || y >= bodyStart + bodyHeight) return true;
+
+    let inList = true;
+    let listRow = y - bodyStart;
+    if (inner >= 76) {
+      const listWidth = Math.max(24, Math.floor(inner * 0.38));
+      inList = localX < listWidth;
+    } else {
+      const listHeight = Math.min(this.view === "activity" ? 7 : 5, Math.max(bodyHeight >= 5 ? 2 : 1, Math.floor((bodyHeight - 1) * (this.view === "activity" ? 0.42 : 0.35))));
+      inList = listRow < listHeight;
+      if (!inList) listRow -= listHeight + 1;
+    }
+
+    if (!inList) {
+      this.focus = "diff";
+      this.requestRender();
+      return true;
+    }
+    this.focus = "list";
+    if (listRow === 0) {
+      if (this.view === "changes") {
+        this.scope = localX < 13 ? "working" : "staged";
+        this.selected = 0;
+        this.listStart = 0;
+        this.syncFiles();
+      } else this.requestRender();
+      return true;
+    }
+    if (this.view === "activity") {
+      const index = this.activityStart + listRow - 1;
+      if (index >= 0 && index < (this.activity?.records.length ?? 0)) this.selectActivity(index);
+    } else {
+      const index = this.listStart + listRow - 1;
+      if (index >= 0 && index < this.files.length) this.select(index);
+    }
+    this.requestRender();
+    return true;
+  }
+
   render(width: number): string[] {
     if (width <= 0) return [];
     if (width < 4) return [truncateToWidth(this.theme.fg("accent", "Git"), width, "")];
@@ -479,7 +538,7 @@ export class GitExplorer implements Focusable {
       lines.push(`${this.theme.fg("dim", "RESULT  ")}${this.theme.fg(latest.status === "error" ? "error" : latest.status === "running" ? "warning" : "success", sanitizeTerminalLine(latest.result))}`);
     }
     lines.push("");
-    lines.push(this.theme.fg("dim", "a Activity timeline  ·  Tab Working/Staged"));
+    lines.push(this.theme.fg("dim", "Click panel to focus  ·  a Activity  ·  Tab scope"));
     while (lines.length < height) lines.push("");
     return lines.map((line) => truncateToWidth(line, width, "…")).slice(0, height);
   }
