@@ -45,7 +45,8 @@ test("global chrome matches the mockup hierarchy and stays width-safe", async ()
   assert.match(header[0] ?? "", /feature\/ui/);
   assert.match(header[0] ?? "", /ready/);
   assert.match(footer[1] ?? "", /I904k/);
-  assert.match(footer[1] ?? "", /T62k/);
+  assert.match(footer[1] ?? "", /T22k/);
+  assert.doesNotMatch(footer[1] ?? "", /T62k/, "TURN must not count cache tokens that already appear under CACHE");
   assert.match(footer[1] ?? "", /CTX 144k\/272k 53%/);
   assert.match(footer[1] ?? "", /gpt-5\.3-codex/);
   assert.ok([...header, ...footer].every((line) => visibleWidth(line) === 120));
