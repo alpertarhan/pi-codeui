@@ -6,6 +6,13 @@ All notable changes to `@pi-codeui/core` are documented here. The project follow
 
 - v1.0 compatibility and manual terminal-matrix validation.
 
+## 0.13.0
+
+- Replace the global extension advertisement with repository-aware `PROJECT` identity.
+- Pair branch and Git health in the header while removing duplicate model information.
+- Redesign the footer around prioritized path, token flow, turn, context pressure, model, and thinking groups with responsive disclosure.
+- Rename the multi-purpose rail from `GIT EXPLORER` to `WORKSPACE` and add focus-aware prompt chrome.
+
 ## 0.12.1
 
 - Restore Pi prompt focus when its left-side editor region is clicked while the fullscreen rail is focused.

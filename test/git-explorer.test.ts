@@ -396,7 +396,7 @@ test("workspace search Enter reveals a changed file without opening it", async (
   await settle();
   const revealed = stripTerminalSequences(explorer.render(80).join("\n"));
   assert.equal(result, undefined);
-  assert.match(revealed, /GIT EXPLORER/);
+  assert.match(revealed, /WORKSPACE/);
   assert.match(revealed, /working\.ts/);
   explorer.dispose();
 });
@@ -521,7 +521,7 @@ test("Explorer row count responds to terminal height", async () => {
     await settle();
     const embeddedLines = embedded.render(50);
     assert.equal(embeddedLines.length, 24);
-    assert.match(stripTerminalSequences(embeddedLines[0] ?? ""), /GIT EXPLORER/);
+    assert.match(stripTerminalSequences(embeddedLines[0] ?? ""), /WORKSPACE/);
     assert.doesNotMatch(stripTerminalSequences(embeddedLines[0] ?? ""), /[╭┌]/);
     assert.ok(embeddedLines.some((line) => stripTerminalSequences(line).startsWith("⋮")), "integrated rail must expose a resize handle");
     embedded.dispose();

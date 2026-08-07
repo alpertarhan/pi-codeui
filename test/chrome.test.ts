@@ -41,15 +41,25 @@ test("global chrome matches the mockup hierarchy and stays width-safe", async ()
   const footer = renderChromeFooter(git.state, settings, theme, context, 120);
   assert.equal(header.length, 2);
   assert.equal(footer.length, 2);
-  assert.match(header[0] ?? "", /pi-codeui/);
+  assert.match(header[0] ?? "", /PROJECT  repo/);
+  assert.doesNotMatch(header[0] ?? "", /PROJECT  pi-codeui/, "the global chrome must identify the repository, not advertise the extension");
   assert.match(header[0] ?? "", /feature\/ui/);
-  assert.match(header[0] ?? "", /ready/);
-  assert.match(footer[1] ?? "", /I904k/);
-  assert.match(footer[1] ?? "", /T#7/);
-  assert.doesNotMatch(footer[1] ?? "", /T22k|T62k/, "TURN must be an ordinal, not a token count");
-  assert.match(footer[1] ?? "", /CTX 144k\/272k 53%/);
-  assert.match(footer[1] ?? "", /gpt-5\.3-codex/);
+  assert.match(header[0] ?? "", /1 changed  \+16 -4/);
+  assert.match(header[0] ?? "", /READY/);
+  assert.match(footer[1] ?? "", /PATH  ~\/dev\/pi\/pi-codeui/);
+  assert.match(footer[1] ?? "", /IN 904k/);
+  assert.match(footer[1] ?? "", /#7/);
+  assert.doesNotMatch(footer[1] ?? "", /#22k|#62k/, "TURN must be an ordinal, not a token count");
+  assert.match(footer[1] ?? "", /CTX 53%/);
+  assert.match(footer[1] ?? "", /GPT-5\.3-CODEX/);
   assert.ok([...header, ...footer].every((line) => visibleWidth(line) === 120));
+
+  const wideFooter = renderChromeFooter(git.state, settings, theme, context, 200);
+  assert.match(wideFooter[1] ?? "", /TOKENS  904k in  107k out/);
+  assert.match(wideFooter[1] ?? "", /TURN  7/);
+  assert.match(wideFooter[1] ?? "", /CONTEXT  144k\/272k 53%/);
+  assert.match(wideFooter[1] ?? "", /MODEL  GPT-5\.3-CODEX   THINK  X-HIGH/);
+  assert.doesNotMatch(wideFooter[1] ?? "", /CACHE|TOTAL/, "redundant accounting must not dominate the primary status bar");
 
   for (const width of [24, 40, 80]) {
     assert.ok([...renderChromeHeader(git.state, settings, theme, context, width), ...renderChromeFooter(git.state, settings, theme, context, width)]

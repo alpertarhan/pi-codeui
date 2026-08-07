@@ -303,7 +303,7 @@ Project configuration is read only after Pi marks the project trusted. Unknown f
 
 | Command | Purpose |
 |---|---|
-| `/codeui` | Open Git Explorer |
+| `/codeui` | Focus the CodeUI workspace |
 | `/codeui-refresh` | Refresh repository state |
 | `/codeui-vim` | Toggle embedded Vim mode |
 | `/codeui-settings` | Open extension settings |

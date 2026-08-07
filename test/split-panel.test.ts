@@ -93,13 +93,13 @@ test("fullscreen split wraps and restores Pi's existing layout root", () => {
   assert.match(controller.diagnostic, /split active \(160 cols\)/);
   assert.ok((tui as any).layoutRoot instanceof VStack);
   const splitLines = ((tui as any).layoutRoot as VStack).render(160);
-  const initialTitleColumn = splitLines.find((line) => line.includes("GIT EXPLORER"))?.indexOf("GIT EXPLORER") ?? -1;
+  const initialTitleColumn = splitLines.find((line) => line.includes("WORKSPACE"))?.indexOf("WORKSPACE") ?? -1;
   assert.ok(initialTitleColumn > 40, "Explorer must render beside, not over, the main root");
   (tui as any).handleTerminalInput("\x1b[<0;109;3M");
   assert.notEqual(tui.getFocusedComponent(), editor, "clicking inside the sidebar must focus it");
 
   (tui as any).handleTerminalInput("]");
-  const keyboardTitleColumn = ((tui as any).layoutRoot as VStack).render(160).find((line) => line.includes("GIT EXPLORER"))?.indexOf("GIT EXPLORER") ?? -1;
+  const keyboardTitleColumn = ((tui as any).layoutRoot as VStack).render(160).find((line) => line.includes("WORKSPACE"))?.indexOf("WORKSPACE") ?? -1;
   assert.ok(keyboardTitleColumn < initialTitleColumn, "] must enlarge the focused sidebar");
   assert.match(controller.diagnostic, /panel 58 cols/);
   (tui as any).handleTerminalInput("0");
@@ -108,7 +108,7 @@ test("fullscreen split wraps and restores Pi's existing layout root", () => {
   (tui as any).handleTerminalInput("\x1b[<0;107;3M");
   (tui as any).handleTerminalInput("\x1b[<32;91;3M");
   (tui as any).handleTerminalInput("\x1b[<0;91;3m");
-  const draggedTitleColumn = ((tui as any).layoutRoot as VStack).render(160).find((line) => line.includes("GIT EXPLORER"))?.indexOf("GIT EXPLORER") ?? -1;
+  const draggedTitleColumn = ((tui as any).layoutRoot as VStack).render(160).find((line) => line.includes("WORKSPACE"))?.indexOf("WORKSPACE") ?? -1;
   assert.ok(draggedTitleColumn < initialTitleColumn, "dragging the divider left must enlarge the sidebar");
   assert.match(((tui as any).layoutRoot as VStack).render(160).join("\n"), /70 cols/);
   assert.match(controller.diagnostic, /panel 70 cols/);

@@ -843,7 +843,7 @@ export class GitExplorer implements Focusable {
     const gap = density.gap > 0 && maxRows >= 12;
     const content: string[] = [];
     const { icons } = resolveGlyphs(settings);
-    const title = this.theme.bold(this.theme.fg("accent", this.searchActive ? "⌕  WORKSPACE SEARCH" : `${icons.brand}  GIT EXPLORER`));
+    const title = this.theme.bold(this.theme.fg("accent", this.searchActive ? "⌕  WORKSPACE SEARCH" : `${icons.brand}  WORKSPACE`));
     const tabs = `${this.view === "changes" ? this.theme.fg("accent", "CHANGES") : this.theme.fg("muted", "Changes")}  ${this.view === "activity" ? this.theme.fg("accent", "ACTIVITY") : this.theme.fg("muted", "Activity")}  ${this.view === "checks" ? this.theme.fg("accent", "CHECKS") : this.theme.fg("muted", "Checks")}`;
     const resizeStatus = this.getResizeStatus();
     const status = resizeStatus && inner >= 46 ? this.theme.fg("warning", `↔ ${resizeStatus}`) : "";

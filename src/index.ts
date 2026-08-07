@@ -103,8 +103,8 @@ export default function codeui(pi: ExtensionAPI): void {
       startMode: active.settings.current.vim.startMode,
       modal,
       label: "PROMPT",
-      styleMode: (mode, label) => active.ctx.ui.theme.fg(modal && mode === "insert" ? "success" : "accent", label),
-      styleBorder: (_mode, text) => active.ctx.ui.theme.fg("border", text),
+      styleMode: (mode, label, focused) => active.ctx.ui.theme.fg(focused ? (modal && mode === "insert" ? "success" : "accent") : "dim", label),
+      styleBorder: (mode, text, focused) => active.ctx.ui.theme.fg(focused ? (modal && mode === "insert" ? "success" : "borderAccent") : "border", text),
     });
     active.ctx.ui.setEditorComponent(active.vimFactory);
   };
@@ -186,7 +186,7 @@ export default function codeui(pi: ExtensionAPI): void {
 
   const openExplorer = async (ctx: ExtensionContext): Promise<void> => {
     if (ctx.mode !== "tui" || !runtime) {
-      if (ctx.hasUI) ctx.ui.notify("Git Explorer is available in interactive TUI sessions.", "warning");
+      if (ctx.hasUI) ctx.ui.notify("CodeUI workspace is available in interactive TUI sessions.", "warning");
       return;
     }
     const active = runtime;
@@ -197,11 +197,11 @@ export default function codeui(pi: ExtensionAPI): void {
     await active.git.refresh();
     if (runtime !== active) return;
     if (active.git.state.kind === "none") {
-      ctx.ui.notify("Git Explorer: current directory is not a Git repository.", "info");
+      ctx.ui.notify("CodeUI workspace: current directory is not a Git repository.", "info");
       return;
     }
     if (active.git.state.kind === "error") {
-      ctx.ui.notify(`Git Explorer: ${sanitizeTerminalLine(active.git.state.message)}`, "error");
+      ctx.ui.notify(`CodeUI workspace: ${sanitizeTerminalLine(active.git.state.message)}`, "error");
       return;
     }
     const explorerSettings = active.settings.current.explorer;
@@ -283,11 +283,11 @@ export default function codeui(pi: ExtensionAPI): void {
   pi.on("agent_settled", () => runtime?.git.schedule());
 
   pi.registerCommand("codeui", {
-    description: "Open the read-only Git Explorer",
+    description: "Open the CodeUI developer workspace",
     handler: async (_args, ctx) => openExplorer(ctx),
   });
   pi.registerShortcut(Key.ctrlShift("g"), {
-    description: "Open the read-only Git Explorer",
+    description: "Focus the CodeUI developer workspace",
     handler: openExplorer,
   });
   pi.registerCommand("codeui-reset-workspace", {

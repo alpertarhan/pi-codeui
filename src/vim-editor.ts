@@ -15,8 +15,8 @@ export interface VimEditorOptions {
   startMode: VimMode;
   modal?: boolean;
   label?: string;
-  styleMode?: (mode: VimMode, label: string) => string;
-  styleBorder?: (mode: VimMode, text: string) => string;
+  styleMode?: (mode: VimMode, label: string, focused: boolean) => string;
+  styleBorder?: (mode: VimMode, text: string, focused: boolean) => string;
   onModeChange?: (mode: VimMode) => void;
 }
 
@@ -46,7 +46,7 @@ export class VimEditor extends CustomEditor {
     this.vimOptions = vimOptions;
     this.mode = vimOptions.startMode;
     if (vimOptions.styleBorder) {
-      const border = (text: string) => vimOptions.styleBorder!(this.mode, text);
+      const border = (text: string) => vimOptions.styleBorder!(this.mode, text, this.focused);
       Object.defineProperty(this, "borderColor", { configurable: true, get: () => border, set: () => {} });
     }
   }
@@ -104,7 +104,7 @@ export class VimEditor extends CustomEditor {
     if (lines.length === 0 || width <= 0) return lines;
 
     const label = ` ${this.vimOptions.modal === false ? (this.vimOptions.label ?? "PROMPT") : this.mode.toUpperCase()} `;
-    const styled = this.vimOptions.styleMode?.(this.mode, label) ?? this.borderColor(label);
+    const styled = this.vimOptions.styleMode?.(this.mode, label, this.focused) ?? this.borderColor(label);
     const labelWidth = visibleWidth(styled);
     if (labelWidth > width) return lines;
 

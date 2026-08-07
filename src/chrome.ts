@@ -16,19 +16,49 @@ const fit = (text: string, width: number, align: "left" | "center" | "right" = "
   return `${value}${" ".repeat(gap)}`;
 };
 
-const columns = (left: string, center: string, right: string, width: number): string => {
-  if (width < 60) {
-    const leftWidth = Math.max(0, width - Math.min(24, visibleWidth(right)) - 1);
-    return truncateToWidth(`${fit(left, leftWidth)} ${fit(right, width - leftWidth - 1, "right")}`, width, "");
+const columns = (
+  left: string,
+  center: string,
+  right: string,
+  width: number,
+  leftRatio = 0.34,
+  centerRatio = 0.32,
+): string => {
+  if (width < 90) {
+    const rightWidth = Math.min(Math.floor(width * 0.44), visibleWidth(right));
+    const leftWidth = Math.max(0, width - rightWidth - (rightWidth > 0 ? 2 : 0));
+    return truncateToWidth(`${fit(left, leftWidth)}${rightWidth > 0 ? "  " : ""}${fit(right, rightWidth, "right")}`, width, "");
   }
-  const leftWidth = Math.floor(width * 0.36);
-  const centerWidth = Math.floor(width * 0.28);
-  return `${fit(left, leftWidth)}${fit(center, centerWidth, "center")}${fit(right, width - leftWidth - centerWidth, "right")}`;
+  const gutter = 2;
+  const usable = Math.max(0, width - gutter * 2);
+  const leftWidth = Math.floor(usable * leftRatio);
+  const centerWidth = Math.floor(usable * centerRatio);
+  return `${fit(left, leftWidth)}${" ".repeat(gutter)}${fit(center, centerWidth, "center")}${" ".repeat(gutter)}${fit(right, usable - leftWidth - centerWidth, "right")}`;
 };
 
+const readyState = (state: GitViewState) => state.kind === "loading" ? state.previous : state;
+
 const branchName = (state: GitViewState): string => {
-  const ready = state.kind === "loading" ? state.previous : state;
-  return ready?.kind === "repo" ? sanitizeTerminalLine(ready.status.branch.name ?? "detached") : "no-git";
+  const ready = readyState(state);
+  return ready?.kind === "repo" ? sanitizeTerminalLine(ready.status.branch.name ?? "detached") : "no git";
+};
+
+const projectName = (state: GitViewState, cwd: string): string => {
+  const ready = readyState(state);
+  const root = ready?.kind === "repo" ? ready.root : cwd;
+  return sanitizeTerminalLine(basename(root) || root || "workspace");
+};
+
+const gitSummary = (state: GitViewState, settings: Readonly<CodeuiSettings>): { text: string; tone: "success" | "warning" | "error" | "muted" } => {
+  const ready = readyState(state);
+  if (state.kind === "error") return { text: "git error", tone: "error" };
+  if (!ready) return { text: "syncing", tone: "muted" };
+  if (ready.kind !== "repo") return { text: "no git", tone: "muted" };
+  const count = ready.status.files.filter((file) => settings.git.showUntracked || !file.untracked).length;
+  if (!count) return { text: "clean", tone: "success" };
+  const added = ready.working.added + ready.cached.added;
+  const deleted = ready.working.deleted + ready.cached.deleted;
+  return { text: `${count} changed  +${added} -${deleted}`, tone: "warning" };
 };
 
 const projectPath = (cwd: string): string => {
@@ -54,11 +84,11 @@ export function renderChromeHeader(
 ): string[] {
   if (!settings.chrome.header || width <= 0) return [];
   const { icons } = resolveGlyphs(settings);
-  const workspace = basename(context.cwd);
-  const workspaceLabel = workspace === "pi-codeui" ? "" : `  ·  ${workspace}`;
-  const left = `${theme.fg("accent", `${icons.brand} pi-codeui`)}${theme.fg("dim", workspaceLabel)}`;
-  const center = theme.fg("muted", `${icons.branch} ${branchName(state)}`);
-  const right = `${theme.fg(context.agentRunning ? "warning" : "success", context.agentRunning ? "● working" : "● ready")}${theme.fg("dim", `  ${context.model ?? "no-model"}`)}`;
+  const summary = gitSummary(state, settings);
+  const left = `${theme.fg("dim", "PROJECT  ")}${theme.bold(theme.fg("accent", projectName(state, context.cwd)))}`;
+  const center = `${theme.fg("muted", `${icons.branch} ${branchName(state)}`)}${theme.fg("dim", "  ·  ")}${theme.fg(summary.tone, summary.text)}`;
+  const status = context.agentRunning ? "WORKING" : "READY";
+  const right = theme.bold(theme.fg(context.agentRunning ? "warning" : "success", `●  ${status}`));
   return [columns(left, center, right, width), theme.fg("border", "─".repeat(width))];
 }
 
@@ -70,19 +100,10 @@ export function renderChromeFooter(
   width: number,
 ): string[] {
   if (!settings.chrome.footer || width <= 0) return [];
-  const ready = state.kind === "loading" ? state.previous : state;
-  let git = "git idle";
-  if (ready?.kind === "repo") {
-    const count = ready.status.files.filter((file) => settings.git.showUntracked || !file.untracked).length;
-    git = count ? `${count} changed  +${ready.working.added + ready.cached.added}/-${ready.working.deleted + ready.cached.deleted}` : "✓ clean";
-  } else if (state.kind === "error") git = "git error";
-  const left = `${theme.fg("dim", projectPath(context.cwd))}${theme.fg("muted", `  ·  ${git}`)}`;
+  const left = `${theme.fg("dim", "PATH  ")}${theme.fg("muted", projectPath(context.cwd))}`;
   const center = renderUsageMetrics(context.usage, theme, width < 160);
-  const right = `${theme.fg("accent", context.model ?? "no-model")}${context.thinking ? theme.fg("dim", `  ·  ${context.thinking}`) : ""}`;
-  const leftWidth = Math.floor(width * 0.2);
-  const centerWidth = Math.floor(width * 0.6);
-  const content = `${fit(left, leftWidth)}${fit(center, centerWidth, "center")}${fit(right, width - leftWidth - centerWidth, "right")}`;
-  return [theme.fg("border", "─".repeat(width)), content];
+  const right = renderModelStatus(context.model, context.thinking, theme, width < 160);
+  return [theme.fg("border", "─".repeat(width)), columns(left, center, right, width, 0.27, 0.45)];
 }
 
 export function createChromeBar(
@@ -106,20 +127,38 @@ export function createChromeBar(
 export function renderUsageMetrics(usage: UsageSnapshot, theme: Theme, compact: boolean): string {
   const contextColor = (usage.contextPercent ?? 0) > 90 ? "error" : (usage.contextPercent ?? 0) > 70 ? "warning" : "accent";
   const contextValue = `${usage.contextTokens === null ? "?" : formatTokens(usage.contextTokens)}/${formatTokens(usage.contextWindow)}${usage.contextPercent === null ? "" : ` ${usage.contextPercent.toFixed(0)}%`}`;
-  const values = compact
-    ? [
-        ["I", formatTokens(usage.session.input), "accent"], ["O", formatTokens(usage.session.output), "success"],
-        ["T#", String(usage.turnNumber), "thinkingHigh"], ["C", formatTokens(usage.session.cached), "warning"],
-        ["Σ", formatTokens(usage.session.total), "text"],
-      ] as const
-    : [
-        ["IN ", formatTokens(usage.session.input), "accent"], ["OUT ", formatTokens(usage.session.output), "success"],
-        ["TURN #", String(usage.turnNumber), "thinkingHigh"], ["CACHE ", formatTokens(usage.session.cached), "warning"],
-        ["TOTAL ", formatTokens(usage.session.total), "text"],
-      ] as const;
-  const metrics = values.map(([label, value, color]) => `${theme.fg("dim", label)}${theme.fg(color, value)}`);
-  metrics.push(`${theme.fg("dim", compact ? "CTX " : "CONTEXT ")}${theme.fg(contextColor, contextValue)}`);
-  return metrics.join(theme.fg("dim", compact ? " " : "  ·  "));
+  if (compact) {
+    return [
+      `${theme.fg("dim", "IN ")}${theme.fg("accent", formatTokens(usage.session.input))}`,
+      `${theme.fg("dim", "OUT ")}${theme.fg("success", formatTokens(usage.session.output))}`,
+      `${theme.fg("dim", "#")}${theme.fg("thinkingHigh", String(usage.turnNumber))}`,
+      `${theme.fg("dim", "CTX ")}${theme.fg(contextColor, usage.contextPercent === null ? "?" : `${usage.contextPercent.toFixed(0)}%`)}`,
+    ].join(theme.fg("dim", "  ·  "));
+  }
+  return [
+    `${theme.fg("dim", "TOKENS  ")}${theme.fg("accent", formatTokens(usage.session.input))}${theme.fg("dim", " in  ")}${theme.fg("success", formatTokens(usage.session.output))}${theme.fg("dim", " out")}`,
+    `${theme.fg("dim", "TURN  ")}${theme.fg("thinkingHigh", String(usage.turnNumber))}`,
+    `${theme.fg("dim", "CONTEXT  ")}${theme.fg(contextColor, contextValue)}`,
+  ].join(theme.fg("dim", "   ·   "));
+}
+
+const THINKING_TONES = {
+  off: "thinkingOff",
+  minimal: "thinkingMinimal",
+  low: "thinkingLow",
+  medium: "thinkingMedium",
+  high: "thinkingHigh",
+  xhigh: "thinkingXhigh",
+  max: "thinkingMax",
+} as const;
+
+export function renderModelStatus(model: string | undefined, thinking: string | undefined, theme: Theme, compact: boolean): string {
+  const modelName = sanitizeTerminalLine(model ?? "no model").toUpperCase();
+  const level = sanitizeTerminalLine(thinking ?? "off").toLowerCase();
+  const thinkingLabel = level === "xhigh" ? "X-HIGH" : level.toUpperCase();
+  const thinkingTone = THINKING_TONES[level as keyof typeof THINKING_TONES] ?? "muted";
+  if (compact) return `${theme.fg("accent", modelName)}${theme.fg("dim", `  ·  ${thinkingLabel}`)}`;
+  return `${theme.fg("dim", "MODEL  ")}${theme.bold(theme.fg("accent", modelName))}${theme.fg("dim", "   THINK  ")}${theme.bold(theme.fg(thinkingTone, thinkingLabel))}`;
 }
 
 export function chromeContext(ctx: ExtensionContext, agentRunning: boolean): ChromeRenderContext {
