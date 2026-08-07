@@ -13,6 +13,8 @@ export type VimMode = "normal" | "insert";
 
 export interface VimEditorOptions {
   startMode: VimMode;
+  modal?: boolean;
+  label?: string;
   styleMode?: (mode: VimMode, label: string) => string;
   onModeChange?: (mode: VimMode) => void;
 }
@@ -56,6 +58,10 @@ export class VimEditor extends CustomEditor {
   }
 
   handleInput(data: string): void {
+    if (this.vimOptions.modal === false) {
+      super.handleInput(data);
+      return;
+    }
     if (matchesKey(data, "escape")) {
       if (this.mode === "insert") this.setMode("normal");
       else super.handleInput(data);
@@ -92,7 +98,7 @@ export class VimEditor extends CustomEditor {
     const lines = super.render(width);
     if (lines.length === 0 || width <= 0) return lines;
 
-    const label = ` ${this.mode.toUpperCase()} `;
+    const label = ` ${this.vimOptions.modal === false ? (this.vimOptions.label ?? "PROMPT") : this.mode.toUpperCase()} `;
     const styled = this.vimOptions.styleMode?.(this.mode, label) ?? this.borderColor(label);
     const labelWidth = visibleWidth(styled);
     if (labelWidth > width) return lines;

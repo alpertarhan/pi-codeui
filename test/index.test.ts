@@ -30,6 +30,8 @@ function context(mode: string, overrides: Record<string, unknown> = {}) {
   const statuses: Array<[string, string | undefined]> = [];
   const notifications: string[] = [];
   const customOptions: unknown[] = [];
+  const headers: unknown[] = [];
+  const footers: unknown[] = [];
   const editorComponents: unknown[] = [];
   let editorComponent: unknown;
   const theme = {
@@ -45,6 +47,8 @@ function context(mode: string, overrides: Record<string, unknown> = {}) {
       notify: (message: string) => notifications.push(message),
       setStatus: (key: string, value: string | undefined) => statuses.push([key, value]),
       setWidget: (key: string, value: unknown, options?: unknown) => widgets.push([key, value, options]),
+      setHeader: (value: unknown) => headers.push(value),
+      setFooter: (value: unknown) => footers.push(value),
       getEditorComponent: () => editorComponent,
       setEditorComponent: (value: unknown) => { editorComponent = value; editorComponents.push(value); },
       custom: async (factory: any, options?: unknown) => {
@@ -60,7 +64,7 @@ function context(mode: string, overrides: Record<string, unknown> = {}) {
     },
     ...overrides,
   };
-  return { ctx, widgets, statuses, notifications, customOptions, editorComponents };
+  return { ctx, widgets, statuses, notifications, customOptions, headers, footers, editorComponents };
 }
 
 test("commands and shortcut register; doctor is safe outside TUI", async () => {
@@ -105,15 +109,19 @@ test("Vim mode toggles for the session and restores the previous editor", async 
   const ext = extension();
   const tui = context("tui");
   await ext.handlers.get("session_start")?.({}, tui.ctx);
+  const chromeFactory = tui.editorComponents.at(-1);
+  assert.equal(typeof chromeFactory, "function");
 
   await ext.commands.get("codeui-vim").handler("", tui.ctx);
   assert.equal(typeof tui.editorComponents.at(-1), "function");
+  assert.notEqual(tui.editorComponents.at(-1), chromeFactory);
   assert.match(tui.notifications.at(-1) ?? "", /enabled/);
 
   await ext.commands.get("codeui-vim").handler("", tui.ctx);
-  assert.equal(tui.editorComponents.at(-1), undefined);
+  assert.equal(typeof tui.editorComponents.at(-1), "function");
   assert.match(tui.notifications.at(-1) ?? "", /disabled/);
   await ext.handlers.get("session_shutdown")?.({}, tui.ctx);
+  assert.equal(tui.editorComponents.at(-1), undefined);
 });
 
 test("session shutdown dismisses an open Explorer and resolves its command", async () => {

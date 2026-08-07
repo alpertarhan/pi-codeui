@@ -40,6 +40,11 @@ Start a file with the bundled schema:
     "fallbackGlyphPreset": "unicode",
     "icons": { "brand": "π" }
   },
+  "chrome": {
+    "header": true,
+    "footer": true,
+    "editor": true
+  },
   "explorer": {
     "layout": "split",
     "splitWidth": "34%",
@@ -56,7 +61,8 @@ The packaged schema is [`schemas/codeui.settings.schema.json`](./schemas/codeui.
 - glyphs: `nerd`, `unicode`, `ascii`, `custom`;
 - icon overrides: `brand`, `branch`, `modified`, `added`, `untracked`;
 - Explorer layout: `split` (default) or `overlay`;
-- split width: 20–50% via `explorer.splitWidth`.
+- split width: 20–50% via `explorer.splitWidth`;
+- mockup-style global header/footer and bordered prompt via `chrome.header`, `chrome.footer`, and `chrome.editor`.
 
 `custom` starts from `fallbackGlyphPreset` and applies icon overrides. Overrides also work with the other profiles. `/codeui-doctor` reports active paths, trust, glyph samples, and terminal identity.
 
@@ -104,6 +110,7 @@ npm run dev
 Inside Pi:
 
 - In fullscreen mode, Git Explorer remains mounted as a true right-side split and Pi's transcript/editor reflows on the left.
+- A global CodeUI header/footer spans both columns; the prompt uses a bordered `PROMPT` editor, or `NORMAL`/`INSERT` when Vim mode is enabled.
 - `/codeui` or `Ctrl+Shift+G` focuses the split panel, or opens the fallback Explorer.
 - `/codeui-refresh` refreshes repository state.
 - `/codeui-vim` toggles embedded Vim mode for the current session.

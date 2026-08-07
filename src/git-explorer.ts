@@ -9,7 +9,7 @@ import { sanitizeTerminalLine } from "./terminal.ts";
 
 export type ExplorerScope = "working" | "staged";
 export type GitExplorerResult = { action: "edit"; root: string; path: string } | undefined;
-export interface GitExplorerOptions { embedded?: boolean; }
+export interface GitExplorerOptions { embedded?: boolean; reservedRows?: number; getTerminalRows?: () => number; }
 type DiffState = { kind: "empty" } | { kind: "loading" } | { kind: "error"; message: string } | ({ kind: "ready" } & TextResult);
 
 const fit = (text: string, width: number): string => {
@@ -36,6 +36,8 @@ export class GitExplorer implements Focusable {
   private dismissed = false;
   private lastDiffPage = 8;
   private readonly embedded: boolean;
+  private readonly reservedRows: number;
+  private readonly getTerminalRows: () => number;
   private readonly unsubscribe: () => void;
   private readonly git: GitStateController;
   private readonly exec: GitExec;
@@ -60,6 +62,8 @@ export class GitExplorer implements Focusable {
     this.requestRender = requestRender;
     this.close = close;
     this.embedded = options.embedded ?? false;
+    this.reservedRows = options.reservedRows ?? 0;
+    this.getTerminalRows = options.getTerminalRows ?? (() => process.stdout.rows ?? 24);
     this.unsubscribe = git.onChange(() => this.syncFiles());
     this.syncFiles();
   }
@@ -107,8 +111,8 @@ export class GitExplorer implements Focusable {
     const density = DENSITY_PRESETS[settings.appearance.density];
     const edge = visibleWidth(border.vertical);
     const inner = Math.max(1, width - edge * 2);
-    const terminalRows = process.stdout.rows ?? 24;
-    const maxRows = this.embedded ? Math.max(5, terminalRows) : Math.max(5, Math.floor(terminalRows * 0.85));
+    const terminalRows = this.getTerminalRows();
+    const maxRows = this.embedded ? Math.max(5, terminalRows - this.reservedRows) : Math.max(5, Math.floor(terminalRows * 0.85));
     const gap = density.gap > 0 && maxRows >= 10;
     const bodyHeight = Math.max(1, maxRows - 4 - (gap ? 2 : 0));
     const content: string[] = [];

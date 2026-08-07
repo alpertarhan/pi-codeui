@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { HStack, TuiAltScreen, type Component, type Terminal } from "@earendil-works/pi-tui";
+import { TuiAltScreen, VStack, type Component, type Terminal } from "@earendil-works/pi-tui";
 import { GitStateController } from "../src/git-state.ts";
 import { cloneSettings, DEFAULT_SETTINGS } from "../src/settings.ts";
 import { SplitPanelController } from "../src/split-panel.ts";
@@ -44,15 +44,17 @@ test("fullscreen split wraps and restores Pi's existing layout root", () => {
     exec: async () => ({ stdout: "", stderr: "", code: 0, killed: false }),
     getSettings: () => settings,
     theme: theme as any,
+    header: { render: (width) => ["header".padEnd(width), "─".repeat(width)], invalidate: () => {} },
+    footer: { render: (width) => ["─".repeat(width), "footer".padEnd(width)], invalidate: () => {} },
     onAction: () => {},
   });
 
   assert.equal(controller.ensure(), true);
   assert.equal(controller.installed, true);
   assert.match(controller.diagnostic, /split active \(160 cols\)/);
-  assert.ok((tui as any).layoutRoot instanceof HStack);
-  const splitLines = ((tui as any).layoutRoot as HStack).render(160);
-  assert.ok((splitLines[1] ?? "").indexOf("Git Explorer") > 40, "Explorer must render beside, not over, the main root");
+  assert.ok((tui as any).layoutRoot instanceof VStack);
+  const splitLines = ((tui as any).layoutRoot as VStack).render(160);
+  assert.ok(splitLines.some((line) => line.indexOf("Git Explorer") > 40), "Explorer must render beside, not over, the main root");
   assert.equal(controller.focus(), true);
   assert.notEqual(tui.getFocusedComponent(), editor);
   (tui.getFocusedComponent() as any).handleInput("q");

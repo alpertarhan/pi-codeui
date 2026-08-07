@@ -11,6 +11,11 @@ export interface CodeuiSettings {
     fallbackGlyphPreset: FallbackGlyphPreset;
     icons: Partial<Record<IconKey, string>>;
   };
+  chrome: {
+    header: boolean;
+    footer: boolean;
+    editor: boolean;
+  };
   widget: {
     enabled: boolean;
     maxFiles: number;
@@ -43,6 +48,7 @@ export const DEFAULT_SETTINGS: Readonly<CodeuiSettings> = Object.freeze({
     fallbackGlyphPreset: "unicode",
     icons: Object.freeze({}),
   }),
+  chrome: Object.freeze({ header: true, footer: true, editor: true }),
   widget: Object.freeze({ enabled: true, maxFiles: 4, placement: "aboveEditor" }),
   explorer: Object.freeze({ layout: "split", splitWidth: "34%", overlayWidth: "52%", minOverlayColumns: 100, diffContext: 3, maxDiffLines: 500 }),
   vim: Object.freeze({ enabled: false, startMode: "insert", externalEditor: Object.freeze(["nvim"]) as unknown as string[] }),
@@ -79,7 +85,7 @@ export function normalizeSettings(raw: unknown, inherited: Readonly<CodeuiSettin
     warnings.push(`${name}: expected an object`);
     return {};
   };
-  reportUnknown(raw, ["$schema", "appearance", "widget", "explorer", "vim", "git"], "", warnings);
+  reportUnknown(raw, ["$schema", "appearance", "chrome", "widget", "explorer", "vim", "git"], "", warnings);
 
   const appearance = section("appearance");
   reportUnknown(appearance, ["density", "borders", "glyphPreset", "fallbackGlyphPreset", "icons"], "appearance", warnings);
@@ -95,6 +101,8 @@ export function normalizeSettings(raw: unknown, inherited: Readonly<CodeuiSettin
     else warnings.push(`appearance.icons.${key}: expected a non-empty, control-free string of at most 16 characters`);
   }
 
+  const chrome = section("chrome");
+  reportUnknown(chrome, ["header", "footer", "editor"], "chrome", warnings);
   const widget = section("widget");
   reportUnknown(widget, ["enabled", "maxFiles", "placement"], "widget", warnings);
   const explorer = section("explorer");
@@ -112,6 +120,11 @@ export function normalizeSettings(raw: unknown, inherited: Readonly<CodeuiSettin
         glyphPreset: enumField(appearance, "glyphPreset", ["nerd", "unicode", "ascii", "custom"], inherited.appearance.glyphPreset, "appearance", warnings),
         fallbackGlyphPreset: enumField(appearance, "fallbackGlyphPreset", ["nerd", "unicode", "ascii"], inherited.appearance.fallbackGlyphPreset, "appearance", warnings),
         icons: normalizedIcons,
+      },
+      chrome: {
+        header: booleanField(chrome, "header", inherited.chrome.header, "chrome", warnings),
+        footer: booleanField(chrome, "footer", inherited.chrome.footer, "chrome", warnings),
+        editor: booleanField(chrome, "editor", inherited.chrome.editor, "chrome", warnings),
       },
       widget: {
         enabled: booleanField(widget, "enabled", inherited.widget.enabled, "widget", warnings),
@@ -143,6 +156,7 @@ export function normalizeSettings(raw: unknown, inherited: Readonly<CodeuiSettin
 export function cloneSettings(settings: Readonly<CodeuiSettings>): CodeuiSettings {
   return {
     appearance: { ...settings.appearance, icons: { ...settings.appearance.icons } },
+    chrome: { ...settings.chrome },
     widget: { ...settings.widget },
     explorer: { ...settings.explorer },
     vim: { ...settings.vim, externalEditor: [...settings.vim.externalEditor] },

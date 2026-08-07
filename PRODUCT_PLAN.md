@@ -256,6 +256,11 @@ Proposed schema:
       "untracked": "?"
     }
   },
+  "chrome": {
+    "header": true,
+    "footer": true,
+    "editor": true
+  },
   "widget": {
     "enabled": true,
     "maxFiles": 4,

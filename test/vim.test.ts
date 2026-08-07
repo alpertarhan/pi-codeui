@@ -56,6 +56,19 @@ test("Vim editor switches modes, ignores normal text, and maps core motions", ()
   assert.match(lines.at(-1) ?? "", /NORMAL/);
 });
 
+test("non-modal CodeUI editor preserves normal typing and shows prompt chrome", () => {
+  const editor = new VimEditor(
+    { requestRender: () => {}, terminal: { rows: 24, columns: 80 } } as any,
+    editorTheme as any,
+    keybindings as any,
+    { startMode: "insert", modal: false, label: "PROMPT" },
+  );
+  editor.setText("hello");
+  editor.handleInput("!");
+  assert.equal(editor.getText(), "hello!");
+  assert.match(editor.render(40).at(-1) ?? "", /PROMPT/);
+});
+
 test("external editor argv is shell-free and repository-contained", async () => {
   const root = await mkdtemp(join(tmpdir(), "pi-codeui-editor-"));
   try {

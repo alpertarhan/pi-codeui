@@ -27,6 +27,15 @@
         }
       }
     },
+    "chrome": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "header": { "type": "boolean" },
+        "footer": { "type": "boolean" },
+        "editor": { "type": "boolean" }
+      }
+    },
     "widget": {
       "type": "object",
       "additionalProperties": false,

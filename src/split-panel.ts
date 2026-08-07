@@ -1,6 +1,7 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import {
   HStack,
+  VStack,
   isViewportTUI,
   type Component,
   type TUI,
@@ -16,11 +17,15 @@ type InternalViewportTui = ViewportTUI & {
   getFocusedComponent?: () => Component | null;
 };
 
+type DisposableComponent = Component & { dispose?(): void };
+
 export interface SplitPanelOptions {
   git: GitStateController;
   exec: GitExec;
   getSettings: () => Readonly<CodeuiSettings>;
   theme: Theme;
+  header?: DisposableComponent;
+  footer?: DisposableComponent;
   onAction: (result: Exclude<GitExplorerResult, undefined>) => void;
 }
 
@@ -35,7 +40,7 @@ export class SplitPanelController {
   private readonly tui: TUI;
   private readonly options: SplitPanelOptions;
   private originalRoot: Component | undefined;
-  private splitRoot: HStack | undefined;
+  private splitRoot: Component | undefined;
   private panel: GitExplorer | undefined;
   private previousFocus: Component | null = null;
   private panelColumns = 0;
@@ -108,6 +113,8 @@ export class SplitPanelController {
   dispose(): void {
     if (this.disposed) return;
     this.restore();
+    this.options.header?.dispose?.();
+    this.options.footer?.dispose?.();
     this.disposed = true;
   }
 
@@ -119,7 +126,11 @@ export class SplitPanelController {
       this.options.theme,
       () => this.tui.requestRender(),
       (result) => this.deactivate(result),
-      { embedded: true },
+      {
+        embedded: true,
+        reservedRows: (this.options.header ? 2 : 0) + (this.options.footer ? 2 : 0),
+        getTerminalRows: () => this.tui.terminal.rows,
+      },
     );
   }
 
@@ -139,10 +150,15 @@ export class SplitPanelController {
   private mount(originalRoot: Component, panel: GitExplorer, panelColumns: number): void {
     if (!isViewportTUI(this.tui)) return;
     this.panelColumns = panelColumns;
-    this.splitRoot = new HStack([
+    const content = new HStack([
       { component: originalRoot, basis: 0, grow: 1, shrink: 1, minSize: 40 },
       { component: panel, basis: panelColumns, grow: 0, shrink: 1, minSize: 30, maxSize: panelColumns },
     ]);
+    const rows = [];
+    if (this.options.header) rows.push({ component: this.options.header });
+    rows.push({ component: content, basis: 0, grow: 1, shrink: 1, minSize: 5 });
+    if (this.options.footer) rows.push({ component: this.options.footer });
+    this.splitRoot = rows.length === 1 ? content : new VStack(rows);
     this.tui.setLayoutRoot(this.splitRoot);
   }
 

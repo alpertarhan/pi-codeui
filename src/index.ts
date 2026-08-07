@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Key } from "@earendil-works/pi-tui";
 import { createChangesWidget } from "./changes-widget.ts";
+import { chromeContext, createChromeBar } from "./chrome.ts";
 import { getSettingsPaths } from "./config.ts";
 import { openExternalEditor } from "./external-editor.ts";
 import { GitExplorer, type GitExplorerResult } from "./git-explorer.ts";
@@ -30,7 +31,11 @@ interface Runtime {
   previousEditor?: EditorFactory;
   vimFactory?: NonNullable<EditorFactory>;
   vimOverride?: boolean;
+  vimModal?: boolean;
+  editorChrome?: boolean;
   split?: SplitPanelController;
+  agentRunning: boolean;
+  requestRender?: () => void;
 }
 
 export default function codeui(pi: ExtensionAPI): void {
@@ -40,6 +45,8 @@ export default function codeui(pi: ExtensionAPI): void {
   const clearUI = (ctx: ExtensionContext): void => {
     if (!ctx.hasUI) return;
     ctx.ui.setWidget(CHANGES_KEY, undefined);
+    ctx.ui.setHeader(undefined);
+    ctx.ui.setFooter(undefined);
     ctx.ui.setStatus(GIT_KEY, undefined);
     ctx.ui.setStatus(SettingsController.statusKey, undefined);
   };
@@ -50,6 +57,8 @@ export default function codeui(pi: ExtensionAPI): void {
     }
     active.vimFactory = undefined;
     active.previousEditor = undefined;
+    active.vimModal = undefined;
+    active.editorChrome = undefined;
   };
 
   const disposeRuntime = (ctx?: ExtensionContext): void => {
@@ -70,17 +79,24 @@ export default function codeui(pi: ExtensionAPI): void {
   const syncVimEditor = (): void => {
     if (!runtime) return;
     const active = runtime;
-    const enabled = active.vimOverride ?? active.settings.current.vim.enabled;
+    const modal = active.vimOverride ?? active.settings.current.vim.enabled;
+    const chrome = active.settings.current.chrome.editor;
+    const enabled = modal || chrome;
     if (!enabled) {
       restoreEditor(active);
       return;
     }
-    if (active.vimFactory) return;
+    if (active.vimFactory && active.vimModal === modal && active.editorChrome === chrome) return;
+    if (active.vimFactory) restoreEditor(active);
 
     active.previousEditor = active.ctx.ui.getEditorComponent();
+    active.vimModal = modal;
+    active.editorChrome = chrome;
     active.vimFactory = (tui, theme, keybindings) => new VimEditor(tui, theme, keybindings, {
       startMode: active.settings.current.vim.startMode,
-      styleMode: (mode, label) => active.ctx.ui.theme.fg(mode === "insert" ? "success" : "accent", label),
+      modal,
+      label: "PROMPT",
+      styleMode: (mode, label) => active.ctx.ui.theme.fg(modal && mode === "insert" ? "success" : "accent", label),
     });
     active.ctx.ui.setEditorComponent(active.vimFactory);
   };
@@ -100,13 +116,27 @@ export default function codeui(pi: ExtensionAPI): void {
     const active = runtime;
     const { ctx, git } = active;
     const current = active.settings.current;
+    const context = () => chromeContext(ctx, active.agentRunning);
+    const publicChrome = (kind: "header" | "footer", tui: Parameters<typeof createChromeBar>[1], theme: Parameters<typeof createChromeBar>[2]) => {
+      const bar = createChromeBar(kind, tui, theme, git, () => active.settings.current, context);
+      return {
+        render: (width: number) => active.split?.installed ? [] : bar.render(width),
+        invalidate: () => bar.invalidate(),
+        dispose: () => bar.dispose(),
+      };
+    };
+    ctx.ui.setHeader(current.chrome.header ? (tui, theme) => publicChrome("header", tui, theme) : undefined);
+    ctx.ui.setFooter(current.chrome.footer ? (tui, theme) => publicChrome("footer", tui, theme) : undefined);
     ctx.ui.setWidget(CHANGES_KEY, (tui, theme) => {
+      active.requestRender = () => tui.requestRender();
       active.split?.dispose();
       active.split = new SplitPanelController(tui, {
         git,
         exec: pi.exec.bind(pi),
         getSettings: () => active.settings.current,
         theme,
+        header: current.chrome.header ? createChromeBar("header", tui, theme, git, () => active.settings.current, context) : undefined,
+        footer: current.chrome.footer ? createChromeBar("footer", tui, theme, git, () => active.settings.current, context) : undefined,
         onAction: (result) => void handleExplorerAction(active, result),
       });
       active.split.ensure();
@@ -190,13 +220,23 @@ export default function codeui(pi: ExtensionAPI): void {
       const state = git.state;
       ctx.ui.setStatus(GIT_KEY, state.kind === "error" ? ctx.ui.theme.fg("error", "git error") : undefined);
     });
-    runtime = { settings, git, ctx, unsubscribe };
+    runtime = { settings, git, ctx, unsubscribe, agentRunning: false };
     await git.refresh();
     installWidget();
   });
 
   pi.on("session_shutdown", (_event, ctx) => disposeRuntime(ctx));
 
+  pi.on("agent_start", () => {
+    if (!runtime) return;
+    runtime.agentRunning = true;
+    runtime.requestRender?.();
+  });
+  pi.on("agent_end", () => {
+    if (!runtime) return;
+    runtime.agentRunning = false;
+    runtime.requestRender?.();
+  });
   pi.on("tool_result", (event) => {
     if (event.toolName === "edit" || event.toolName === "write" || event.toolName === "bash") runtime?.git.schedule();
   });
