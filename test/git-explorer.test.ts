@@ -259,6 +259,40 @@ test("Checks view lists diagnostics and opens Neovim at the exact location", asy
   activity.dispose();
 });
 
+test("workspace search filters every rail source and opens exact results", async () => {
+  const activity = new ActivityTracker("/repo");
+  activity.start({ type: "tool_execution_start", toolCallId: "check-search", toolName: "bash", args: { command: "npm run typecheck" } }, 1);
+  activity.end({ type: "tool_execution_end", toolCallId: "check-search", toolName: "bash", result: { content: [{ type: "text", text: "src/app.ts(12,5): error TS2322: Wrong type" }] }, isError: true }, 20);
+  let result: unknown;
+  const explorer = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, (value) => { result = value; }, { activity, getTerminalRows: () => 30 });
+  await settle();
+
+  explorer.handleInput("/");
+  for (const character of "c: wrong") explorer.handleInput(character);
+  const search = stripTerminalSequences(explorer.render(80).join("\n"));
+  assert.match(search, /WORKSPACE SEARCH/);
+  assert.match(search, /RESULTS\s+1/);
+  assert.match(search, /src\/app\.ts:12:5/);
+  explorer.handleInput("\x0f");
+  assert.deepEqual(result, { action: "edit", root: "/repo", path: "src/app.ts", line: 12, column: 5 });
+  activity.dispose();
+});
+
+test("workspace search Enter reveals a changed file without opening it", async () => {
+  let result: unknown;
+  const explorer = new GitExplorer(controller(), async () => ({ stdout: "@@ -1 +1 @@\n-old\n+new", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, (value) => { result = value; }, { getTerminalRows: () => 30 });
+  await settle();
+  explorer.handleInput("/");
+  for (const character of "f: working") explorer.handleInput(character);
+  explorer.handleInput("\r");
+  await settle();
+  const revealed = stripTerminalSequences(explorer.render(80).join("\n"));
+  assert.equal(result, undefined);
+  assert.match(revealed, /GIT EXPLORER/);
+  assert.match(revealed, /working\.ts/);
+  explorer.dispose();
+});
+
 test("Explorer keys, diff colors/truncation, and renders stay width-safe", async () => {
   const colors: ThemeColor[] = [];
   const settings = cloneSettings(DEFAULT_SETTINGS);
