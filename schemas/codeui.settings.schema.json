@@ -10,6 +10,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "theme": { "type": "string", "minLength": 1, "maxLength": 128 },
         "density": { "enum": ["compact", "comfortable"] },
         "borders": { "enum": ["rounded", "square", "minimal"] },
         "glyphPreset": { "enum": ["nerd", "unicode", "ascii", "custom"] },

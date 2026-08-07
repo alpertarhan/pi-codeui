@@ -54,7 +54,7 @@ test("fullscreen split wraps and restores Pi's existing layout root", () => {
   assert.match(controller.diagnostic, /split active \(160 cols\)/);
   assert.ok((tui as any).layoutRoot instanceof VStack);
   const splitLines = ((tui as any).layoutRoot as VStack).render(160);
-  assert.ok(splitLines.some((line) => line.indexOf("Git Explorer") > 40), "Explorer must render beside, not over, the main root");
+  assert.ok(splitLines.some((line) => line.indexOf("GIT EXPLORER") > 40), "Explorer must render beside, not over, the main root");
   assert.equal(controller.focus(), true);
   assert.notEqual(tui.getFocusedComponent(), editor);
   (tui.getFocusedComponent() as any).handleInput("q");

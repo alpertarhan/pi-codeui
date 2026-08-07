@@ -5,6 +5,7 @@ export type FallbackGlyphPreset = Exclude<GlyphPreset, "custom">;
 
 export interface CodeuiSettings {
   appearance: {
+    theme: string;
     density: "compact" | "comfortable";
     borders: "rounded" | "square" | "minimal";
     glyphPreset: GlyphPreset;
@@ -42,6 +43,7 @@ export interface CodeuiSettings {
 
 export const DEFAULT_SETTINGS: Readonly<CodeuiSettings> = Object.freeze({
   appearance: Object.freeze({
+    theme: "codeui-midnight",
     density: "compact",
     borders: "rounded",
     glyphPreset: "nerd",
@@ -88,7 +90,7 @@ export function normalizeSettings(raw: unknown, inherited: Readonly<CodeuiSettin
   reportUnknown(raw, ["$schema", "appearance", "chrome", "widget", "explorer", "vim", "git"], "", warnings);
 
   const appearance = section("appearance");
-  reportUnknown(appearance, ["density", "borders", "glyphPreset", "fallbackGlyphPreset", "icons"], "appearance", warnings);
+  reportUnknown(appearance, ["theme", "density", "borders", "glyphPreset", "fallbackGlyphPreset", "icons"], "appearance", warnings);
   const iconsRaw = appearance.icons;
   const icons = isObject(iconsRaw) ? iconsRaw : {};
   if (iconsRaw !== undefined && !isObject(iconsRaw)) warnings.push("appearance.icons: expected an object");
@@ -115,6 +117,7 @@ export function normalizeSettings(raw: unknown, inherited: Readonly<CodeuiSettin
   return {
     settings: {
       appearance: {
+        theme: stringField(appearance, "theme", inherited.appearance.theme, "appearance", warnings),
         density: enumField(appearance, "density", ["compact", "comfortable"], inherited.appearance.density, "appearance", warnings),
         borders: enumField(appearance, "borders", ["rounded", "square", "minimal"], inherited.appearance.borders, "appearance", warnings),
         glyphPreset: enumField(appearance, "glyphPreset", ["nerd", "unicode", "ascii", "custom"], inherited.appearance.glyphPreset, "appearance", warnings),
@@ -199,6 +202,14 @@ function percentageField(object: Record<string, unknown>, key: string, min: numb
   const number = match ? Number(match[1]) : NaN;
   if (number >= min && number <= max) return value as `${number}%`;
   warnings.push(`explorer.${key}: expected a percentage from ${min}% to ${max}%`);
+  return fallback;
+}
+
+function stringField(object: Record<string, unknown>, key: string, fallback: string, prefix: string, warnings: string[]): string {
+  const value = object[key];
+  if (value === undefined) return fallback;
+  if (typeof value === "string" && value.length > 0 && value.length <= 128 && !/[\x00-\x1f\x7f]/.test(value)) return value;
+  warnings.push(`${prefix}.${key}: expected a non-empty, control-free string of at most 128 characters`);
   return fallback;
 }
 

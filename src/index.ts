@@ -116,6 +116,10 @@ export default function codeui(pi: ExtensionAPI): void {
     const active = runtime;
     const { ctx, git } = active;
     const current = active.settings.current;
+    if (current.appearance.theme !== "inherit") {
+      const themeResult = ctx.ui.setTheme(current.appearance.theme);
+      if (!themeResult.success) ctx.ui.notify(`pi-codeui theme: ${sanitizeTerminalLine(themeResult.error ?? "theme not found")}`, "warning");
+    }
     const context = () => chromeContext(ctx, active.agentRunning);
     const publicChrome = (kind: "header" | "footer", tui: Parameters<typeof createChromeBar>[1], theme: Parameters<typeof createChromeBar>[2]) => {
       const bar = createChromeBar(kind, tui, theme, git, () => active.settings.current, context);
@@ -289,6 +293,8 @@ export default function codeui(pi: ExtensionAPI): void {
       ctx.ui.notify([
         `Global config: ${paths.global}`,
         `Project config: ${paths.project} (${ctx.isProjectTrusted() ? "trusted/active" : "untrusted/ignored"})`,
+        `Theme: ${current.appearance.theme}`,
+        `Chrome: header ${current.chrome.header ? "on" : "off"} · footer ${current.chrome.footer ? "on" : "off"} · editor ${current.chrome.editor ? "on" : "off"}`,
         `Glyph preset: ${glyphs.preset}`,
         `Samples: ${glyphs.icons.brand} ${glyphs.icons.branch} ${glyphs.icons.modified} ${glyphs.icons.added} ${glyphs.icons.untracked}`,
         `Terminal: ${terminal}`,

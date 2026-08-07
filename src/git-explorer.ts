@@ -21,6 +21,47 @@ export function filesForScope(files: readonly FileChange[], scope: ExplorerScope
   return files.filter((file) => scope === "staged" ? file.staged : file.unstaged || file.conflicted || (showUntracked && file.untracked));
 }
 
+export interface DisplayDiffLine {
+  text: string;
+  color: "toolDiffAdded" | "toolDiffRemoved" | "toolDiffContext" | "accent";
+}
+
+export function formatUnifiedDiff(text: string): DisplayDiffLine[] {
+  const raw = text ? text.split("\n") : [];
+  const firstHunk = raw.findIndex((line) => line.startsWith("@@"));
+  const source = firstHunk >= 0
+    ? raw.slice(firstHunk)
+    : raw.filter((line) => !line.startsWith("diff --git ") && !line.startsWith("index ") && !line.startsWith("--- ") && !line.startsWith("+++ "));
+  const result: DisplayDiffLine[] = [];
+  let oldLine: number | undefined;
+  let newLine: number | undefined;
+  let untrackedLine = 1;
+  for (const rawLine of source) {
+    const line = sanitizeTerminalLine(rawLine);
+    const hunk = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+    if (hunk) {
+      oldLine = Number(hunk[1]);
+      newLine = Number(hunk[2]);
+      result.push({ text: `         ${line}`, color: "accent" });
+      continue;
+    }
+    const added = line.startsWith("+") && !line.startsWith("+++");
+    const removed = line.startsWith("-") && !line.startsWith("---");
+    if (oldLine !== undefined && newLine !== undefined) {
+      const oldNumber = removed || (!added && !removed) ? String(oldLine).padStart(4) : "    ";
+      const newNumber = added || (!added && !removed) ? String(newLine).padStart(4) : "    ";
+      result.push({ text: `${oldNumber} ${newNumber} ${line}`, color: added ? "toolDiffAdded" : removed ? "toolDiffRemoved" : "toolDiffContext" });
+      if (!added) oldLine++;
+      if (!removed) newLine++;
+    } else if (added) {
+      result.push({ text: `     ${String(untrackedLine++).padStart(4)} ${line}`, color: "toolDiffAdded" });
+    } else {
+      result.push({ text: line, color: removed ? "toolDiffRemoved" : "toolDiffContext" });
+    }
+  }
+  return result;
+}
+
 export class GitExplorer implements Focusable {
   focused = false;
   scope: ExplorerScope = "working";
@@ -117,7 +158,10 @@ export class GitExplorer implements Focusable {
     const bodyHeight = Math.max(1, maxRows - 4 - (gap ? 2 : 0));
     const content: string[] = [];
     const working = this.scope === "working";
-    content.push(`${this.theme.fg("accent", "Git Explorer")}  ${working ? this.theme.fg("accent", "[Working]") : this.theme.fg("muted", "Working")}  ${working ? this.theme.fg("muted", "Staged") : this.theme.fg("accent", "[Staged]")}`);
+    const { icons } = resolveGlyphs(settings);
+    const title = this.theme.bold(this.theme.fg("accent", `${icons.brand}  GIT EXPLORER`));
+    const tabs = `${working ? this.theme.fg("accent", "WORKING") : this.theme.fg("muted", "Working")}  ${working ? this.theme.fg("muted", "Staged") : this.theme.fg("accent", "STAGED")}`;
+    content.push(`${title}${" ".repeat(Math.max(1, inner - visibleWidth(title) - visibleWidth(tabs)))}${tabs}`);
     if (gap) content.push("");
 
     if (inner >= 76) {
@@ -137,7 +181,7 @@ export class GitExplorer implements Focusable {
       content.push(...this.renderDiff(inner, diffHeight));
     }
     if (gap) content.push("");
-    content.push(this.theme.fg("dim", "j/k select/scroll · Tab scope · Enter focus · PgUp/PgDn scroll · e nvim · r refresh · q close"));
+    content.push(this.theme.fg("dim", "j/k move · Tab scope · Enter focus · PgUp/PgDn diff · e nvim · r refresh · q editor"));
 
     const framed = content.map((line) => this.theme.fg("border", border.vertical) + fit(line, inner) + this.theme.fg("border", border.vertical));
     const horizontal = (left: string, right: string) => this.theme.fg("border", truncateToWidth(`${left}${border.horizontal.repeat(Math.max(0, width - visibleWidth(left) - visibleWidth(right)))}${right}`, width, ""));
@@ -247,7 +291,7 @@ export class GitExplorer implements Focusable {
   }
 
   private renderList(width: number, height: number): string[] {
-    const lines = [this.theme.fg(this.focus === "list" ? "accent" : "muted", `${this.focus === "list" ? "▶" : " "} Files (${this.files.length})`)];
+    const lines = [this.theme.fg(this.focus === "list" ? "accent" : "muted", `${this.focus === "list" ? "▶" : " "} CHANGES  ${this.files.length}`)];
     const visible = Math.max(1, height - 1);
     if (this.selected < this.listStart) this.listStart = this.selected;
     if (this.selected >= this.listStart + visible) this.listStart = this.selected - visible + 1;
@@ -255,9 +299,12 @@ export class GitExplorer implements Focusable {
     const icons = resolveGlyphs(this.getSettings()).icons;
     for (let i = this.listStart; i < Math.min(this.files.length, this.listStart + visible); i++) {
       const file = this.files[i]!;
-      const marker = i === this.selected ? ">" : " ";
+      const marker = i === this.selected ? "›" : " ";
       const icon = file.conflicted ? "!" : file.untracked ? icons.untracked : file.staged && this.scope === "staged" ? icons.added : icons.modified;
-      const text = `${marker} ${icon} ${sanitizeTerminalLine(file.path)}`;
+      const status = file.conflicted ? "!" : file.untracked ? "?" : this.scope === "staged" ? file.index.trim() || "M" : file.worktree.trim() || "M";
+      const path = sanitizeTerminalLine(file.path);
+      const rename = file.oldPath ? this.theme.fg("dim", ` ← ${sanitizeTerminalLine(file.oldPath)}`) : "";
+      const text = `${marker} ${this.theme.fg(file.conflicted ? "error" : file.untracked ? "warning" : "muted", status)} ${icon} ${path}${rename}`;
       lines.push(i === this.selected ? this.theme.bg("selectedBg", fit(text, width)) : text);
     }
     while (lines.length < height) lines.push("");
@@ -267,7 +314,7 @@ export class GitExplorer implements Focusable {
   private renderDiff(width: number, height: number): string[] {
     const file = this.files[this.selected];
     const truncated = this.diff.kind === "ready" && this.diff.truncated ? this.theme.fg("warning", " [truncated]") : "";
-    const lines = [this.theme.fg(this.focus === "diff" ? "accent" : "muted", `${this.focus === "diff" ? "▶" : " "} ${sanitizeTerminalLine(file?.path ?? "Diff")}`) + truncated];
+    const lines = [this.theme.fg(this.focus === "diff" ? "accent" : "muted", `${this.focus === "diff" ? "▶" : " "} DIFF  ${sanitizeTerminalLine(file?.path ?? "Select a file")}`) + truncated];
     const bodyHeight = Math.max(1, height - 1);
     this.lastDiffPage = Math.max(1, bodyHeight - 1);
     if (this.diff.kind === "loading") lines.push(this.theme.fg("dim", "Loading diff…"));
@@ -275,14 +322,10 @@ export class GitExplorer implements Focusable {
     else if (this.diff.kind === "empty") lines.push(this.theme.fg("muted", file ? "No diff" : "Select a file"));
     else if (this.diff.binary) lines.push(this.theme.fg("warning", "Binary file"));
     else {
-      const source = this.diff.text ? this.diff.text.split("\n") : ["No textual changes"];
+      const source = this.diff.text ? formatUnifiedDiff(this.diff.text) : [{ text: "No textual changes", color: "toolDiffContext" as const }];
       const maxScroll = Math.max(0, source.length - bodyHeight + (this.diff.truncated ? 1 : 0));
       this.diffScroll = Math.max(0, Math.min(this.diffScroll, maxScroll));
-      for (const rawLine of source.slice(this.diffScroll, this.diffScroll + bodyHeight)) {
-        const line = sanitizeTerminalLine(rawLine);
-        const color = line.startsWith("+") && !line.startsWith("+++") ? "toolDiffAdded" : line.startsWith("-") && !line.startsWith("---") ? "toolDiffRemoved" : "toolDiffContext";
-        lines.push(this.theme.fg(color, line));
-      }
+      for (const line of source.slice(this.diffScroll, this.diffScroll + bodyHeight)) lines.push(this.theme.fg(line.color, line.text));
       if (this.diff.truncated && lines.length < height) lines.push(this.theme.fg("warning", "… diff truncated"));
     }
     while (lines.length < height) lines.push("");
@@ -291,7 +334,7 @@ export class GitExplorer implements Focusable {
 
   private scrollDiff(delta: number): void {
     if (this.diff.kind !== "ready" || this.diff.binary) return;
-    const count = this.diff.text ? this.diff.text.split("\n").length : 0;
+    const count = this.diff.text ? formatUnifiedDiff(this.diff.text).length : 0;
     this.diffScroll = Math.max(0, Math.min(this.diffScroll + delta, Math.max(0, count - 1)));
     this.requestRender();
   }

@@ -34,6 +34,7 @@ Start a file with the bundled schema:
 {
   "$schema": "https://unpkg.com/@pi-codeui/core/schemas/codeui.settings.schema.json",
   "appearance": {
+    "theme": "codeui-midnight",
     "density": "compact",
     "borders": "rounded",
     "glyphPreset": "nerd",
@@ -56,6 +57,7 @@ Start a file with the bundled schema:
 
 The packaged schema is [`schemas/codeui.settings.schema.json`](./schemas/codeui.settings.schema.json). Supported profiles are:
 
+- theme: `codeui-midnight` by default, any installed Pi theme name, or `inherit`;
 - density: `compact`, `comfortable`;
 - borders: `rounded`, `square`, `minimal`;
 - glyphs: `nerd`, `unicode`, `ascii`, `custom`;

@@ -32,6 +32,7 @@ function context(mode: string, overrides: Record<string, unknown> = {}) {
   const customOptions: unknown[] = [];
   const headers: unknown[] = [];
   const footers: unknown[] = [];
+  const themes: string[] = [];
   const editorComponents: unknown[] = [];
   let editorComponent: unknown;
   const theme = {
@@ -44,6 +45,7 @@ function context(mode: string, overrides: Record<string, unknown> = {}) {
     isProjectTrusted: () => false,
     ui: {
       theme,
+      setTheme: (name: string) => { themes.push(name); return { success: true }; },
       notify: (message: string) => notifications.push(message),
       setStatus: (key: string, value: string | undefined) => statuses.push([key, value]),
       setWidget: (key: string, value: unknown, options?: unknown) => widgets.push([key, value, options]),
@@ -64,7 +66,7 @@ function context(mode: string, overrides: Record<string, unknown> = {}) {
     },
     ...overrides,
   };
-  return { ctx, widgets, statuses, notifications, customOptions, headers, footers, editorComponents };
+  return { ctx, widgets, statuses, notifications, customOptions, headers, footers, themes, editorComponents };
 }
 
 test("commands and shortcut register; doctor is safe outside TUI", async () => {
@@ -98,6 +100,9 @@ test("lifecycle skips non-TUI resources, installs factory widget in TUI, and cle
   const installed = tui.widgets.find(([key, value]) => key === "pi-codeui.changes" && typeof value === "function");
   assert.ok(installed);
   assert.deepEqual(installed?.[2], { placement: "aboveEditor" });
+  assert.ok(tui.themes.includes("codeui-midnight"));
+  assert.equal(typeof tui.headers.at(-1), "function");
+  assert.equal(typeof tui.footers.at(-1), "function");
 
   await ext.handlers.get("session_shutdown")?.({}, tui.ctx);
   assert.ok(tui.widgets.some(([key, value]) => key === "pi-codeui.changes" && value === undefined));

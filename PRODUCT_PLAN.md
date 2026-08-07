@@ -244,6 +244,7 @@ Proposed schema:
 {
   "$schema": "https://unpkg.com/@pi-codeui/core/schemas/codeui.settings.schema.json",
   "appearance": {
+    "theme": "codeui-midnight",
     "density": "compact",
     "borders": "rounded",
     "glyphPreset": "nerd",

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { filesForScope, GitExplorer } from "../src/git-explorer.ts";
+import { filesForScope, formatUnifiedDiff, GitExplorer } from "../src/git-explorer.ts";
 import type { GitExec } from "../src/git/git.ts";
 import { GitStateController } from "../src/git-state.ts";
 import type { FileChange } from "../src/git/types.ts";
@@ -36,6 +36,26 @@ function fakeTheme(colors: ThemeColor[] = []): Theme {
 }
 
 const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+test("unified diff formatting hides metadata and adds old/new line numbers", () => {
+  const lines = formatUnifiedDiff([
+    "diff --git a/app.ts b/app.ts",
+    "index 123..456 100644",
+    "--- a/app.ts",
+    "+++ b/app.ts",
+    "@@ -10,2 +10,3 @@ submit",
+    " context",
+    "-old",
+    "+new",
+    "+more",
+  ].join("\n"));
+  assert.equal(lines[0]?.color, "accent");
+  assert.match(lines[0]?.text ?? "", /@@ -10,2 \+10,3 @@/);
+  assert.match(lines[1]?.text ?? "", /10\s+10\s+ context/);
+  assert.match(lines[2]?.text ?? "", /11\s+\s-old/);
+  assert.match(lines[3]?.text ?? "", /\s+11 \+new/);
+  assert.equal(lines.some((line) => line.text.includes("diff --git")), false);
+});
 
 test("Explorer scopes include the right staged, working, conflict, and untracked files", () => {
   assert.deepEqual(filesForScope(files, "staged").map((file) => file.path), ["both.ts", "staged.ts"]);
@@ -134,6 +154,7 @@ test("Explorer sanitizes malicious paths, diffs, and errors", async () => {
   const explorer = new GitExplorer(git, exec, () => settings, {
     fg: (_color: string, text: string) => text,
     bg: (_color: string, text: string) => text,
+    bold: (text: string) => text,
   } as Theme, () => {}, () => {});
   await settle();
   for (const width of [40, 60, 100]) {
@@ -146,6 +167,7 @@ test("Explorer sanitizes malicious paths, diffs, and errors", async () => {
   const errorExplorer = new GitExplorer(git, async () => ({ stdout: "", stderr: "bad\n\x1b]0;owned\x07", code: 2, killed: false }), () => settings, {
     fg: (_color: string, text: string) => text,
     bg: (_color: string, text: string) => text,
+    bold: (text: string) => text,
   } as Theme, () => {}, () => {});
   await settle();
   assert.ok(errorExplorer.render(60).every((line) => !/[\r\n\t]/.test(line) && !line.replaceAll("\x1b[0m", "").includes("\x1b")));

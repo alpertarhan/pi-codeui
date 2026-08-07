@@ -29,6 +29,7 @@ export function renderChangesWidget(state: GitViewState, settings: Readonly<Code
   };
   const dirty = visibleFiles.length > 0;
   const parts = [
+    theme.bold(theme.fg("accent", "CHANGES")),
     theme.fg("accent", `${icons.branch} ${branch}`),
     dirty ? theme.fg("warning", `${icons.added}${counts.staged} ${icons.modified}${counts.unstaged} ${icons.untracked}${counts.untracked} !${counts.conflicted}`) : theme.fg("success", "clean"),
   ];

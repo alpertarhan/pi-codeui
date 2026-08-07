@@ -17,7 +17,7 @@ async function fixture(): Promise<{ root: string; global: string; project: strin
   return { root, global, project };
 }
 
-async function eventually(check: () => boolean, timeout = 2000): Promise<void> {
+async function eventually(check: () => boolean, timeout = 4000): Promise<void> {
   const end = Date.now() + timeout;
   while (!check()) {
     if (Date.now() >= end) assert.fail("condition not reached before timeout");
@@ -26,6 +26,7 @@ async function eventually(check: () => boolean, timeout = 2000): Promise<void> {
 }
 
 test("defaults and concrete appearance presets are complete", () => {
+  assert.equal(DEFAULT_SETTINGS.appearance.theme, "codeui-midnight");
   assert.equal(DEFAULT_SETTINGS.appearance.density, "compact");
   assert.deepEqual(DEFAULT_SETTINGS.chrome, { header: true, footer: true, editor: true });
   assert.equal(DEFAULT_SETTINGS.explorer.layout, "split");
@@ -38,12 +39,13 @@ test("defaults and concrete appearance presets are complete", () => {
 test("normalization ignores unknown keys and inherits invalid values", () => {
   const result = normalizeSettings({
     unknown: true,
-    appearance: { density: "tiny", borders: "square", extra: 1 },
+    appearance: { theme: "", density: "tiny", borders: "square", extra: 1 },
     chrome: { header: "yes", footer: false },
     widget: { maxFiles: 999, enabled: false },
     explorer: { layout: "sideways", splitWidth: "75%", overlayWidth: "99%", diffContext: 0 },
     vim: { externalEditor: [] },
   });
+  assert.equal(result.settings.appearance.theme, DEFAULT_SETTINGS.appearance.theme);
   assert.equal(result.settings.appearance.density, DEFAULT_SETTINGS.appearance.density);
   assert.equal(result.settings.appearance.borders, "square");
   assert.equal(result.settings.widget.maxFiles, DEFAULT_SETTINGS.widget.maxFiles);

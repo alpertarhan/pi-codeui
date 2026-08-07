@@ -2,19 +2,19 @@
   "$schema": "https://raw.githubusercontent.com/earendil-works/pi/main/packages/coding-agent/src/modes/interactive/theme/theme-schema.json",
   "name": "codeui-midnight",
   "vars": {
-    "navy": "#171b2b",
-    "surface": "#20263a",
-    "surfaceOk": "#1d302b",
-    "surfaceError": "#38242b",
-    "cyan": "#7dcfff",
-    "blue": "#7aa2f7",
-    "green": "#9ece6a",
-    "red": "#f7768e",
-    "yellow": "#e0af68",
-    "purple": "#bb9af7",
-    "text": "#c0caf5",
-    "muted": "#7982a9",
-    "dim": "#565f89"
+    "navy": "#0d1117",
+    "surface": "#172331",
+    "surfaceOk": "#11281f",
+    "surfaceError": "#2b171d",
+    "cyan": "#58d9e8",
+    "blue": "#72a7ff",
+    "green": "#63d99a",
+    "red": "#ff7b8b",
+    "yellow": "#e9c46a",
+    "purple": "#b997ff",
+    "text": "#dce7f3",
+    "muted": "#7f8da2",
+    "dim": "#536075"
   },
   "colors": {
     "accent": "cyan",
@@ -72,8 +72,8 @@
     "bashMode": "green"
   },
   "export": {
-    "pageBg": "#10131f",
-    "cardBg": "#171b2b",
-    "infoBg": "#25283a"
+    "pageBg": "#080b10",
+    "cardBg": "#0d1117",
+    "infoBg": "#151d28"
   }
 }
