@@ -51,6 +51,15 @@ const fitWithSuffix = (text: string, suffix: string, width: number): string => {
   return `${value}${" ".repeat(Math.max(0, width - suffixWidth - visibleWidth(value)))}${suffix}`;
 };
 
+const stackedListHeight = (bodyHeight: number): number =>
+  Math.min(7, Math.max(bodyHeight >= 5 ? 2 : 1, Math.floor((bodyHeight - 1) * 0.42)));
+
+const padRows = (lines: readonly string[], height: number): string[] => {
+  const rows = lines.slice(0, Math.max(0, height));
+  while (rows.length < height) rows.push("");
+  return rows;
+};
+
 export function filesForScope(files: readonly FileChange[], scope: ExplorerScope, showUntracked = true): FileChange[] {
   return files.filter((file) => scope === "staged" ? file.staged : file.unstaged || file.conflicted || (showUntracked && file.untracked));
 }
@@ -487,8 +496,7 @@ export class GitExplorer implements Focusable {
       listPanelWidth = Math.max(24, Math.floor(inner * 0.38));
       inList = localX < listPanelWidth;
     } else {
-      const timelineView = this.searchActive || this.view === "activity" || this.view === "checks";
-      const listHeight = Math.min(timelineView ? 7 : 5, Math.max(bodyHeight >= 5 ? 2 : 1, Math.floor((bodyHeight - 1) * (timelineView ? 0.42 : 0.35))));
+      const listHeight = stackedListHeight(bodyHeight);
       inList = listRow < listHeight;
       if (!inList) listRow -= listHeight + 1;
     }
@@ -872,12 +880,11 @@ export class GitExplorer implements Focusable {
       content.push(...renderList(inner, 1));
       if (bodyHeight > 1) content.push(...renderDetail(inner, 1));
     } else {
-      const timelineView = this.searchActive || this.view === "activity" || this.view === "checks";
-      const listHeight = Math.min(timelineView ? 7 : 5, Math.max(bodyHeight >= 5 ? 2 : 1, Math.floor((bodyHeight - 1) * (timelineView ? 0.42 : 0.35))));
+      const listHeight = stackedListHeight(bodyHeight);
       const detailHeight = bodyHeight - listHeight - 1;
-      content.push(...renderList(inner, listHeight));
+      content.push(...padRows(renderList(inner, listHeight), listHeight));
       content.push(this.theme.fg("borderMuted", border.horizontal.repeat(inner)));
-      content.push(...renderDetail(inner, detailHeight));
+      content.push(...padRows(renderDetail(inner, detailHeight), detailHeight));
     }
     if (gap) content.push("");
     this.widgetDockStartRow = widgetDock.length > 0 ? content.length : -1;

@@ -6,6 +6,12 @@ All notable changes to `@pi-codeui/core` are documented here. The project follow
 
 - v1.0 compatibility and manual terminal-matrix validation.
 
+## 0.13.2
+
+- Give stacked Changes, Activity, Checks, and Search views one stable list/insight grid.
+- Pad empty and short insight states so Extensions and shortcut hints remain bottom-anchored.
+- Keep mouse hit-testing aligned with the shared responsive tab geometry.
+
 ## 0.13.1
 
 - Reduce focused prompt chrome to an accent label instead of full-width cyan rules.

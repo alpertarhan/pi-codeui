@@ -81,6 +81,31 @@ test("embedded Explorer supports mouse tabs, scopes, and row selection", async (
   explorer.dispose();
 });
 
+test("stacked tabs keep list, insight, dock, and footer geometry stable", async () => {
+  const explorer = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, {
+    embedded: true,
+    getTerminalRows: () => 40,
+    activity: new ActivityTracker("/repo"),
+  });
+  await settle();
+
+  const snapshot = () => stripTerminalSequences(explorer.render(60).join("\n")).split("\n");
+  const changes = snapshot();
+  explorer.handleInput("a");
+  const activity = snapshot();
+  explorer.handleInput("c");
+  const checks = snapshot();
+  const row = (lines: string[], pattern: RegExp) => lines.findIndex((line) => pattern.test(line));
+
+  const detailRows = [row(changes, /\bDIFF\s+/), row(activity, /DEVELOPER INSIGHT/), row(checks, /CHECK INSIGHT/)];
+  assert.ok(detailRows.every((index) => index > 0));
+  assert.deepEqual(detailRows, [detailRows[0], detailRows[0], detailRows[0]], "switching tabs must not move the lower insight zone");
+  assert.equal(row(activity, /DEVELOPER INSIGHT/) - row(activity, /ACTIVITY\s+0/), 8, "empty activity must retain the shared list zone");
+  assert.deepEqual([changes.length, activity.length, checks.length], [40, 40, 40]);
+  assert.ok([changes, activity, checks].every((lines) => /q/.test(lines.at(-1) ?? "")), "tab hints must remain anchored to the bottom row");
+  explorer.dispose();
+});
+
 test("right-click target opens the selected file action menu", async () => {
   const calls: string[][] = [];
   const git = controller();
