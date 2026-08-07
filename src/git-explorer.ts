@@ -24,6 +24,13 @@ const fit = (text: string, width: number): string => {
   return value + " ".repeat(Math.max(0, width - visibleWidth(value)));
 };
 
+const fitWithSuffix = (text: string, suffix: string, width: number): string => {
+  const suffixWidth = visibleWidth(suffix);
+  if (suffixWidth >= width) return truncateToWidth(suffix, width, "");
+  const value = truncateToWidth(text, width - suffixWidth, "…");
+  return `${value}${" ".repeat(Math.max(0, width - suffixWidth - visibleWidth(value)))}${suffix}`;
+};
+
 export function filesForScope(files: readonly FileChange[], scope: ExplorerScope, showUntracked = true): FileChange[] {
   return files.filter((file) => scope === "staged" ? file.staged : file.unstaged || file.conflicted || (showUntracked && file.untracked));
 }
@@ -81,6 +88,7 @@ export class GitExplorer implements Focusable {
   private activityStart = 0;
   private activityDetailScroll = 0;
   private lastActivityDetailCount = 0;
+  private lastMouseClick: { view: ExplorerView; index: number; at: number } | undefined;
   private files: FileChange[] = [];
   private diff: DiffState = { kind: "empty" };
   private abort: AbortController | undefined;
@@ -185,7 +193,7 @@ export class GitExplorer implements Focusable {
     else if (down || up) this.select(this.selected + (down ? 1 : -1));
   }
 
-  handleMouse(x: number, y: number, width: number): boolean {
+  handleMouse(x: number, y: number, width: number, now = Date.now()): boolean {
     if (!this.embedded || width < 4 || x < 0 || y < 0) return false;
     const settings = this.getSettings();
     const border = BORDER_PRESETS[settings.appearance.borders];
@@ -209,9 +217,10 @@ export class GitExplorer implements Focusable {
 
     let inList = true;
     let listRow = y - bodyStart;
+    let listPanelWidth = inner;
     if (inner >= 76) {
-      const listWidth = Math.max(24, Math.floor(inner * 0.38));
-      inList = localX < listWidth;
+      listPanelWidth = Math.max(24, Math.floor(inner * 0.38));
+      inList = localX < listPanelWidth;
     } else {
       const listHeight = Math.min(this.view === "activity" ? 7 : 5, Math.max(bodyHeight >= 5 ? 2 : 1, Math.floor((bodyHeight - 1) * (this.view === "activity" ? 0.42 : 0.35))));
       inList = listRow < listHeight;
@@ -235,10 +244,32 @@ export class GitExplorer implements Focusable {
     }
     if (this.view === "activity") {
       const index = this.activityStart + listRow - 1;
-      if (index >= 0 && index < (this.activity?.records.length ?? 0)) this.selectActivity(index);
+      const record = this.activity?.records[index];
+      if (record) {
+        const doubleClick = this.lastMouseClick?.view === "activity" && this.lastMouseClick.index === index && now - this.lastMouseClick.at <= 500;
+        if (record.path && (doubleClick || localX >= listPanelWidth - 4)) {
+          const repo = this.repo();
+          if (repo) this.dismiss({ action: "edit", root: repo.root, path: record.path });
+          this.lastMouseClick = undefined;
+          return true;
+        }
+        this.selectActivity(index);
+        this.lastMouseClick = { view: "activity", index, at: now };
+      }
     } else {
       const index = this.listStart + listRow - 1;
-      if (index >= 0 && index < this.files.length) this.select(index);
+      const file = this.files[index];
+      if (file) {
+        const doubleClick = this.lastMouseClick?.view === "changes" && this.lastMouseClick.index === index && now - this.lastMouseClick.at <= 500;
+        if (doubleClick || localX >= listPanelWidth - 4) {
+          const repo = this.repo();
+          if (repo) this.dismiss({ action: "edit", root: repo.root, path: file.path });
+          this.lastMouseClick = undefined;
+          return true;
+        }
+        this.select(index);
+        this.lastMouseClick = { view: "changes", index, at: now };
+      }
     }
     this.requestRender();
     return true;
@@ -284,8 +315,8 @@ export class GitExplorer implements Focusable {
       content.push(...renderDetail(inner, detailHeight));
     }
     if (gap) content.push("");
-    const fullHints = this.view === "changes" ? "a activity  j/k move  Tab scope  Enter focus  e nvim  r refresh  q editor" : "g changes  j/k move  Enter detail  e nvim  q editor";
-    const compactHints = this.view === "changes" ? "a activity  j/k  Tab  e  r  q" : "g changes  j/k  Enter  e  q";
+    const fullHints = this.view === "changes" ? "a activity  j/k move  Tab scope  ↗/double-click/e nvim  r refresh  q editor" : "g changes  j/k move  Enter detail  ↗/double-click/e nvim  q editor";
+    const compactHints = this.view === "changes" ? "a activity  j/k  Tab  ↗/dbl/e  r  q" : "g changes  j/k  Enter  ↗/dbl/e  q";
     content.push(this.theme.fg("dim", visibleWidth(fullHints) <= inner ? fullHints : compactHints));
 
     const borderToken = this.focused ? "borderAccent" : "border";
@@ -440,7 +471,8 @@ export class GitExplorer implements Focusable {
       const subject = record.path ?? record.what;
       const time = record.status === "running" ? relativeTime(record.startedAt) : record.durationMs === undefined ? "" : formatDuration(record.durationMs);
       const text = `${marker} ${status} ${this.theme.fg("muted", record.kind.toUpperCase())} ${sanitizeTerminalLine(subject)}${time ? this.theme.fg("dim", `  ${time}`) : ""}`;
-      lines.push(index === this.activitySelected ? this.theme.bg("selectedBg", fit(text, width)) : text);
+      const row = record.path ? fitWithSuffix(text, this.theme.fg("accent", " ↗"), width) : fit(text, width);
+      lines.push(index === this.activitySelected ? this.theme.bg("selectedBg", row) : row);
     }
     return lines.slice(0, height);
   }
@@ -487,7 +519,8 @@ export class GitExplorer implements Focusable {
       const touched = this.activity?.touchedTimestamp(file.path);
       const time = touched ? this.theme.fg("dim", `  ${relativeTime(touched)}`) : "";
       const text = `${marker} ${this.theme.fg(file.conflicted ? "error" : file.untracked ? "warning" : "muted", status)} ${icon} ${path}${rename}${time}`;
-      lines.push(i === this.selected ? this.theme.bg("selectedBg", fit(text, width)) : text);
+      const row = fitWithSuffix(text, this.theme.fg("accent", " ↗"), width);
+      lines.push(i === this.selected ? this.theme.bg("selectedBg", row) : row);
     }
     while (lines.length < height) lines.push("");
     return lines.slice(0, height);
@@ -538,7 +571,7 @@ export class GitExplorer implements Focusable {
       lines.push(`${this.theme.fg("dim", "RESULT  ")}${this.theme.fg(latest.status === "error" ? "error" : latest.status === "running" ? "warning" : "success", sanitizeTerminalLine(latest.result))}`);
     }
     lines.push("");
-    lines.push(this.theme.fg("dim", "Click panel to focus  ·  a Activity  ·  Tab scope"));
+    lines.push(this.theme.fg("dim", "Click ↗ or double-click a file to open Neovim"));
     while (lines.length < height) lines.push("");
     return lines.map((line) => truncateToWidth(line, width, "…")).slice(0, height);
   }

@@ -80,6 +80,26 @@ test("embedded Explorer supports mouse tabs, scopes, and row selection", async (
   explorer.dispose();
 });
 
+test("double-clicking a changed file returns a Neovim action", async () => {
+  let result: unknown;
+  const explorer = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, (value) => { result = value; }, {
+    embedded: true,
+    getTerminalRows: () => 24,
+  });
+  await settle();
+  assert.match(stripTerminalSequences(explorer.render(60).join("\n")), /↗/);
+  explorer.handleMouse(5, 3, 60, 1_000);
+  assert.equal(result, undefined, "first click must preserve diff-preview UX");
+  explorer.handleMouse(5, 3, 60, 1_300);
+  assert.deepEqual(result, { action: "edit", root: "/repo", path: "both.ts" });
+
+  let arrowResult: unknown;
+  const arrowExplorer = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, (value) => { arrowResult = value; }, { embedded: true, getTerminalRows: () => 24 });
+  await settle();
+  arrowExplorer.handleMouse(58, 3, 60, 2_000);
+  assert.deepEqual(arrowResult, { action: "edit", root: "/repo", path: "both.ts" });
+});
+
 test("Explorer returns a safe external-editor action for the selected file", async () => {
   let result: unknown;
   const explorer = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, (value) => { result = value; });
