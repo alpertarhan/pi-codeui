@@ -1,6 +1,6 @@
 # @pi-codeui/core
 
-A customization foundation for a Git-aware, keyboard-first [Pi Coding Agent](https://pi.dev) TUI. It provides layered settings, appearance presets, and a renderer-agnostic read-only Git data layer; it does not render the future Git UI.
+A Git-aware, keyboard-first [Pi Coding Agent](https://pi.dev) TUI with a persistent changes summary and read-only Git Explorer.
 
 ## Requirements and installation
 
@@ -75,11 +75,20 @@ npm pack --dry-run
 npm run dev
 ```
 
-Inside Pi, use `/codeui-doctor` and `/reload`.
+Inside Pi:
+
+- `/codeui` or `Ctrl+Shift+G` opens Git Explorer.
+- `/codeui-refresh` refreshes repository state.
+- `/codeui-doctor` reports active customization settings.
+- `/reload` reloads the extension and Pi resources.
+
+Git Explorer controls: `j`/`k` or arrows select files and scroll the focused diff; `Tab` switches Working/Staged; `Enter` toggles list/diff focus; `PageUp`/`PageDown` or `Ctrl+U`/`Ctrl+D` scroll the diff; `r` refreshes; `q`/`Escape` closes. Wide terminals show a right-side overlay. Below `explorer.minOverlayColumns`, Pi uses a regular full dashboard so narrow terminals remain usable.
+
+The current UI follows [the terminal mockup](./docs/mockups/pi-codeui-terminal.png).
 
 ## Scope
 
-The internal Git core detects repositories and exposes typed status, branch, diff, numstat, and bounded untracked-preview data. Git UI, overlays, mutating actions, and Vim behavior remain deferred.
+The changes widget and Git Explorer are read-only. Staging, unstaging, discarding, custom headers/footers/editors, Vim, and Neovim integration remain deferred.
 
 ## License
 

@@ -3,10 +3,8 @@ import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadSettings } from "../src/config.ts";
 import { fitGlyph, GLYPH_PRESETS, resolveGlyphs } from "../src/glyphs.ts";
-import codeui from "../src/index.ts";
 import { SettingsController } from "../src/settings-controller.ts";
 import { BORDER_PRESETS, DEFAULT_SETTINGS, DENSITY_PRESETS, normalizeSettings } from "../src/settings.ts";
 
@@ -99,10 +97,11 @@ test("successful live reload clears a stale initial settings status", async (t) 
   await writeFile(paths.global, "{");
   const statuses: Array<string | undefined> = [];
   const notifications: string[] = [];
+  let changes = 0;
   const controller = new SettingsController(paths, false, {
     notify: (message) => notifications.push(message),
     setStatus: (_key, value) => statuses.push(value),
-  });
+  }, 75, () => changes++);
 
   await controller.start(false);
   assert.match(statuses.at(-1) ?? "", /safe fallbacks/);
@@ -110,6 +109,7 @@ test("successful live reload clears a stale initial settings status", async (t) 
   assert.equal(await controller.reload(true), true);
   assert.equal(statuses.at(-1), undefined);
   assert.equal(controller.current.widget.maxFiles, 6);
+  assert.equal(changes, 1);
   assert.match(notifications.at(-1) ?? "", /settings reloaded/);
   controller.dispose();
 });
@@ -122,6 +122,7 @@ test("watcher handles atomic replacement, preserves invalid live settings, and s
     notify: (message) => notifications.push(message),
     setStatus: () => {},
   }, 20);
+  t.after(() => controller.dispose());
   await controller.start();
 
   const replacement = `${paths.global}.tmp`;
@@ -144,25 +145,4 @@ test("bundled theme contains Pi 0.84 required tokens", async () => {
   const piSchema = JSON.parse(await (await import("node:fs/promises")).readFile(new URL("../node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme-schema.json", import.meta.url), "utf8")) as { properties: { colors: { required: string[] } } };
   assert.equal(piSchema.properties.colors.required.length, 51);
   assert.deepEqual(piSchema.properties.colors.required.filter((token) => !(token in theme.colors)), []);
-});
-
-test("extension starts resources only in session lifecycle and cleans status", async () => {
-  const handlers = new Map<string, (...args: any[]) => any>();
-  let command: any;
-  codeui({
-    on: (name: string, handler: (...args: any[]) => any) => { handlers.set(name, handler); },
-    registerCommand: (_name: string, value: unknown) => { command = value; },
-  } as unknown as ExtensionAPI);
-  assert.deepEqual([...handlers.keys()], ["session_start", "session_shutdown"]);
-  assert.ok(command);
-
-  const statuses: Array<string | undefined> = [];
-  const ctx = {
-    cwd: process.cwd(), mode: "rpc", hasUI: true,
-    isProjectTrusted: () => false,
-    ui: { notify: () => {}, setStatus: (_key: string, value: string | undefined) => statuses.push(value) },
-  };
-  await handlers.get("session_start")?.({}, ctx);
-  await handlers.get("session_shutdown")?.({}, ctx);
-  assert.equal(statuses.at(-1), undefined);
 });

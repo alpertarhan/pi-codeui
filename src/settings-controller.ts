@@ -19,12 +19,14 @@ export class SettingsController {
   private readonly projectTrusted: boolean;
   private readonly ui: SettingsControllerUI | undefined;
   private readonly debounceMs: number;
+  private readonly onChange: (() => void) | undefined;
 
-  constructor(paths: SettingsPaths, projectTrusted: boolean, ui?: SettingsControllerUI, debounceMs = 75) {
+  constructor(paths: SettingsPaths, projectTrusted: boolean, ui?: SettingsControllerUI, debounceMs = 75, onChange?: () => void) {
     this.paths = paths;
     this.projectTrusted = projectTrusted;
     this.ui = ui;
     this.debounceMs = debounceMs;
+    this.onChange = onChange;
   }
 
   get current(): Readonly<CodeuiSettings> {
@@ -39,7 +41,7 @@ export class SettingsController {
     for (const directory of new Set(directories)) {
       try {
         this.watchers.push(watch(directory, (_event, filename) => {
-          if (filename && filename.toString() !== "codeui.settings.json") return;
+          if (filename && !filename.toString().startsWith("codeui.settings.json")) return;
           clearTimeout(this.timer);
           this.timer = setTimeout(() => void this.reload(true), this.debounceMs);
         }));
@@ -65,6 +67,7 @@ export class SettingsController {
     }
     this.settingsValue = loaded.settings;
     this.hasLoaded = true;
+    this.onChange?.();
     this.ui?.setStatus(SettingsController.statusKey, undefined);
     const warningText = loaded.warnings.length ? ` (${loaded.warnings.join("; ")})` : "";
     if (live) this.ui?.notify(`pi-codeui settings reloaded${warningText}`, loaded.warnings.length ? "warning" : "info");

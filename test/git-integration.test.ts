@@ -63,6 +63,8 @@ test("Git calls forward argv/options and expose typed command and parse failures
   assert.equal(call?.options?.cwd, "/repo");
   assert.equal(call?.options?.timeout, 123);
   assert.equal(call?.options?.signal, signal);
+  await getDiff(capture, "/repo", "file", "working", { ignoreWhitespace: true });
+  assert.deepEqual(call?.args, ["diff", "--no-ext-diff", "--no-color", "--unified=3", "--ignore-all-space", "--", "file"]);
 
   const commandFailure: GitExec = async () => ({ stdout: "", stderr: "broken", code: 2, killed: false });
   await assert.rejects(() => getDiff(commandFailure, "/repo", "file", "working"), (error: unknown) => error instanceof GitError && error.code === 2);

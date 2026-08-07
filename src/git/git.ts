@@ -39,6 +39,7 @@ export interface DiffOptions extends GitCallOptions {
   context?: number;
   maxBytes?: number;
   maxLines?: number;
+  ignoreWhitespace?: boolean;
 }
 
 async function run(exec: GitExec, args: string[], cwd: string, options: GitCallOptions = {}): Promise<ExecResult> {
@@ -119,7 +120,7 @@ export async function getDiff(exec: GitExec, root: string, path: string, scope: 
   const context = nonNegativeInteger(options.context ?? 3, "context");
   const maxBytes = nonNegativeInteger(options.maxBytes ?? 512 * 1024, "maxBytes");
   const maxLines = nonNegativeInteger(options.maxLines ?? 2_000, "maxLines");
-  const args = ["diff", ...(scope === "cached" ? ["--cached"] : []), "--no-ext-diff", "--no-color", `--unified=${context}`, "--", path];
+  const args = ["diff", ...(scope === "cached" ? ["--cached"] : []), "--no-ext-diff", "--no-color", `--unified=${context}`, ...(options.ignoreWhitespace ? ["--ignore-all-space"] : []), "--", path];
   const result = await run(exec, args, root, options);
   if (result.code !== 0) throw failed(args, result);
   return boundedText(result.stdout, maxBytes, maxLines);
