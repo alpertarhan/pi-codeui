@@ -7,6 +7,11 @@ export interface ExternalEditorResult {
   error?: string;
 }
 
+export interface EditorPosition {
+  line: number;
+  column?: number;
+}
+
 type SpawnEditor = (
   command: string,
   args: readonly string[],
@@ -27,6 +32,7 @@ export function runExternalEditor(
   root: string,
   repoPath: string,
   spawn: SpawnEditor = spawnSync,
+  position?: EditorPosition,
 ): ExternalEditorResult {
   const [binary, ...baseArgs] = command;
   if (!binary) return { status: null, error: "No external editor command configured" };
@@ -38,7 +44,10 @@ export function runExternalEditor(
     return { status: null, error: error instanceof Error ? error.message : String(error) };
   }
 
-  const result = spawn(binary, [...baseArgs, "--", absolute], {
+  const vimPosition = position && /(?:^|[/\\])(?:n?vim)$/.test(binary)
+    ? [`+call cursor(${Math.max(1, Math.floor(position.line))},${Math.max(1, Math.floor(position.column ?? 1))})`]
+    : [];
+  const result = spawn(binary, [...baseArgs, ...vimPosition, "--", absolute], {
     cwd: root,
     env: process.env,
     stdio: "inherit",
@@ -54,12 +63,13 @@ export async function openExternalEditor(
   command: readonly string[],
   root: string,
   repoPath: string,
+  position?: EditorPosition,
 ): Promise<ExternalEditorResult> {
   return ctx.ui.custom<ExternalEditorResult>((tui, _theme, _keybindings, done) => {
     tui.stop();
     let result: ExternalEditorResult;
     try {
-      result = runExternalEditor(command, root, repoPath);
+      result = runExternalEditor(command, root, repoPath, spawnSync, position);
     } catch (error) {
       result = { status: null, error: error instanceof Error ? error.message : String(error) };
     } finally {

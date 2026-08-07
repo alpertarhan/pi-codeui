@@ -86,6 +86,12 @@ test("external editor argv is shell-free and repository-contained", async () => 
     assert.deepEqual(invocation?.args, ["-f", "--", join(root, "-strange name.ts")]);
     assert.equal(invocation?.cwd, root);
 
+    runExternalEditor(["nvim", "-f"], root, "src/app.ts", (command, args, options) => {
+      invocation = { command, args, cwd: options.cwd };
+      return { status: 0 };
+    }, { line: 12, column: 5 });
+    assert.deepEqual(invocation?.args, ["-f", "+call cursor(12,5)", "--", join(root, "src/app.ts")]);
+
     assert.throws(() => resolveRepoFile(root, "../outside.ts"), /outside the repository/);
     const rejected = runExternalEditor(["nvim"], root, "../outside.ts", () => {
       assert.fail("spawn must not run for an unsafe path");

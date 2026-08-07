@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ActivityTracker, formatDuration, relativeTime } from "../src/activity.ts";
+import { ActivityTracker, formatDuration, parseDiagnostics, relativeTime } from "../src/activity.ts";
 
 const change = (path: string) => ({ path }) as any;
 
@@ -46,6 +46,32 @@ test("developer commands are classified as tests, builds, and validation", () =>
   assert.match(tracker.records.find((record) => record.id === "test")?.result ?? "", /49 tests passed/);
   assert.equal(tracker.records.find((record) => record.id === "lint")?.kind, "lint");
   assert.equal(tracker.records.find((record) => record.id === "build")?.kind, "build");
+});
+
+test("diagnostics parse common TypeScript, ESLint, and test locations safely", () => {
+  const output = [
+    "src/app.ts(12,5): error TS2322: Type string is not assignable",
+    "/repo/src/lint.ts",
+    "  3:2  warning  Unexpected console  no-console",
+    "tests/unit.test.ts:8:9: expected true to be false",
+    "../../outside.ts:1:1: error: escaped",
+  ].join("\n");
+  const diagnostics = parseDiagnostics(output, "/repo", "lint", "check-1");
+  assert.deepEqual(diagnostics.map(({ path, line, column, severity }) => ({ path, line, column, severity })), [
+    { path: "src/app.ts", line: 12, column: 5, severity: "error" },
+    { path: "src/lint.ts", line: 3, column: 2, severity: "warning" },
+    { path: "tests/unit.test.ts", line: 8, column: 9, severity: "error" },
+  ]);
+});
+
+test("latest successful check clears older diagnostics of the same kind", () => {
+  const tracker = new ActivityTracker("/repo");
+  tracker.start({ type: "tool_execution_start", toolCallId: "lint-1", toolName: "bash", args: { command: "npm run typecheck" } }, 1);
+  tracker.end({ type: "tool_execution_end", toolCallId: "lint-1", toolName: "bash", result: { content: [{ type: "text", text: "src/a.ts(2,3): error TS1: broken" }] }, isError: true }, 2);
+  assert.equal(tracker.diagnostics.length, 1);
+  tracker.start({ type: "tool_execution_start", toolCallId: "lint-2", toolName: "bash", args: { command: "npm run typecheck" } }, 3);
+  tracker.end({ type: "tool_execution_end", toolCallId: "lint-2", toolName: "bash", result: { content: [{ type: "text", text: "Typecheck passed" }] }, isError: false }, 4);
+  assert.equal(tracker.diagnostics.length, 0);
 });
 
 test("activity history is newest-first, bounded, and sanitized", () => {

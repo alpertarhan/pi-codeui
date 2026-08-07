@@ -1,6 +1,6 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, stripTerminalSequences, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type Focusable } from "@earendil-works/pi-tui";
-import { formatDuration, relativeTime, type ActivityRecord, type ActivityTracker } from "./activity.ts";
+import { formatDuration, relativeTime, type ActivityRecord, type ActivityTracker, type Diagnostic } from "./activity.ts";
 import { discardTrackedFile, getDiff, previewUntracked, stageFile, unstageFile, type DiffScope, type GitExec } from "./git/git.ts";
 import type { FileChange, TextResult } from "./git/types.ts";
 import type { GitStateController } from "./git-state.ts";
@@ -9,9 +9,9 @@ import { BORDER_PRESETS, DENSITY_PRESETS, type CodeuiSettings } from "./settings
 import { sanitizeTerminalLine } from "./terminal.ts";
 
 export type ExplorerScope = "working" | "staged";
-type ExplorerView = "changes" | "activity";
+type ExplorerView = "changes" | "activity" | "checks";
 type GitFileAction = "stage" | "unstage" | "discard";
-export type GitExplorerResult = { action: "edit"; root: string; path: string } | undefined;
+export type GitExplorerResult = { action: "edit"; root: string; path: string; line?: number; column?: number } | undefined;
 export interface GitExplorerOptions {
   embedded?: boolean;
   confirm?: (title: string, message: string) => Promise<boolean>;
@@ -94,6 +94,10 @@ export class GitExplorer implements Focusable {
   private activityStart = 0;
   private activityDetailScroll = 0;
   private lastActivityDetailCount = 0;
+  private checkSelected = 0;
+  private checkStart = 0;
+  private checkDetailScroll = 0;
+  private lastCheckDetailCount = 0;
   private lastMouseClick: { view: ExplorerView; index: number; at: number } | undefined;
   private widgetDockCollapsed = false;
   private widgetDockExpanded = false;
@@ -155,6 +159,7 @@ export class GitExplorer implements Focusable {
     this.unsubscribe = git.onChange(() => this.syncFiles());
     this.unsubscribeActivity = this.activity?.onChange(() => {
       this.activitySelected = Math.min(this.activitySelected, Math.max(0, (this.activity?.records.length ?? 1) - 1));
+      this.checkSelected = Math.min(this.checkSelected, Math.max(0, (this.activity?.diagnostics.length ?? 1) - 1));
       this.syncFiles(false);
       this.requestRender();
     });
@@ -174,6 +179,12 @@ export class GitExplorer implements Focusable {
     }
     if (data === "g") {
       this.view = "changes";
+      this.focus = "list";
+      this.requestRender();
+      return;
+    }
+    if (data === "c") {
+      this.view = "checks";
       this.focus = "list";
       this.requestRender();
       return;
@@ -211,9 +222,10 @@ export class GitExplorer implements Focusable {
       return;
     }
     if (data === "e") {
-      const path = this.view === "changes" ? this.files[this.selected]?.path : this.activity?.records[this.activitySelected]?.path;
+      const diagnostic = this.view === "checks" ? this.activity?.diagnostics[this.checkSelected] : undefined;
+      const path = this.view === "changes" ? this.files[this.selected]?.path : this.view === "activity" ? this.activity?.records[this.activitySelected]?.path : diagnostic?.path;
       const repo = this.repo();
-      if (path && repo) this.dismiss({ action: "edit", root: repo.root, path });
+      if (path && repo) this.dismiss({ action: "edit", root: repo.root, path, ...(diagnostic ? { line: diagnostic.line, column: diagnostic.column } : {}) });
       return;
     }
     const down = data === "j" || matchesKey(data, Key.down);
@@ -225,6 +237,13 @@ export class GitExplorer implements Focusable {
       else if (pageUp) this.scrollActivityDetail(-this.lastDiffPage);
       else if ((down || up) && this.focus === "diff") this.scrollActivityDetail(down ? 1 : -1);
       else if (down || up) this.selectActivity(this.activitySelected + (down ? 1 : -1));
+      return;
+    }
+    if (this.view === "checks") {
+      if (pageDown) this.scrollCheckDetail(this.lastDiffPage);
+      else if (pageUp) this.scrollCheckDetail(-this.lastDiffPage);
+      else if ((down || up) && this.focus === "diff") this.scrollCheckDetail(down ? 1 : -1);
+      else if (down || up) this.selectCheck(this.checkSelected + (down ? 1 : -1));
       return;
     }
     if (pageDown) this.scrollDiff(this.lastDiffPage);
@@ -256,8 +275,9 @@ export class GitExplorer implements Focusable {
       return true;
     }
     if (y === 0) {
-      if (localX >= inner - 8) this.view = "activity";
-      else if (localX >= inner - 18) this.view = "changes";
+      if (localX >= inner - 6) this.view = "checks";
+      else if (localX >= inner - 16) this.view = "activity";
+      else if (localX >= inner - 25) this.view = "changes";
       this.focus = "list";
       this.requestRender();
       return true;
@@ -271,7 +291,8 @@ export class GitExplorer implements Focusable {
       listPanelWidth = Math.max(24, Math.floor(inner * 0.38));
       inList = localX < listPanelWidth;
     } else {
-      const listHeight = Math.min(this.view === "activity" ? 7 : 5, Math.max(bodyHeight >= 5 ? 2 : 1, Math.floor((bodyHeight - 1) * (this.view === "activity" ? 0.42 : 0.35))));
+      const timelineView = this.view === "activity" || this.view === "checks";
+      const listHeight = Math.min(timelineView ? 7 : 5, Math.max(bodyHeight >= 5 ? 2 : 1, Math.floor((bodyHeight - 1) * (timelineView ? 0.42 : 0.35))));
       inList = listRow < listHeight;
       if (!inList) listRow -= listHeight + 1;
     }
@@ -304,6 +325,20 @@ export class GitExplorer implements Focusable {
         }
         this.selectActivity(index);
         this.lastMouseClick = { view: "activity", index, at: now };
+      }
+    } else if (this.view === "checks") {
+      const index = this.checkStart + listRow - 1;
+      const diagnostic = this.activity?.diagnostics[index];
+      if (diagnostic) {
+        const doubleClick = this.lastMouseClick?.view === "checks" && this.lastMouseClick.index === index && now - this.lastMouseClick.at <= 500;
+        if (allowOpen && (doubleClick || localX >= listPanelWidth - 4)) {
+          const repo = this.repo();
+          if (repo) this.dismiss({ action: "edit", root: repo.root, path: diagnostic.path, line: diagnostic.line, column: diagnostic.column });
+          this.lastMouseClick = undefined;
+          return true;
+        }
+        this.selectCheck(index);
+        this.lastMouseClick = { view: "checks", index, at: now };
       }
     } else {
       const index = this.listStart + listRow - 1;
@@ -424,7 +459,7 @@ export class GitExplorer implements Focusable {
     const content: string[] = [];
     const { icons } = resolveGlyphs(settings);
     const title = this.theme.bold(this.theme.fg("accent", `${icons.brand}  GIT EXPLORER`));
-    const tabs = `${this.view === "changes" ? this.theme.fg("accent", "CHANGES") : this.theme.fg("muted", "Changes")}  ${this.view === "activity" ? this.theme.fg("accent", "ACTIVITY") : this.theme.fg("muted", "Activity")}`;
+    const tabs = `${this.view === "changes" ? this.theme.fg("accent", "CHANGES") : this.theme.fg("muted", "Changes")}  ${this.view === "activity" ? this.theme.fg("accent", "ACTIVITY") : this.theme.fg("muted", "Activity")}  ${this.view === "checks" ? this.theme.fg("accent", "CHECKS") : this.theme.fg("muted", "Checks")}`;
     const resizeStatus = this.getResizeStatus();
     const status = resizeStatus && inner >= 46 ? this.theme.fg("warning", `↔ ${resizeStatus}`) : "";
     const trailing = status ? `${status}  ${tabs}` : tabs;
@@ -440,8 +475,8 @@ export class GitExplorer implements Focusable {
     const widgetDock = this.renderWidgetDock(inner, dockBudget);
     const bodyHeight = Math.max(1, bodyBudget - widgetDock.length);
 
-    const renderList = (panelWidth: number, height: number) => this.view === "changes" ? this.renderList(panelWidth, height) : this.renderActivityList(panelWidth, height);
-    const renderDetail = (panelWidth: number, height: number) => this.view === "changes" ? this.renderDiff(panelWidth, height) : this.renderActivityDetail(panelWidth, height);
+    const renderList = (panelWidth: number, height: number) => this.view === "changes" ? this.renderList(panelWidth, height) : this.view === "activity" ? this.renderActivityList(panelWidth, height) : this.renderCheckList(panelWidth, height);
+    const renderDetail = (panelWidth: number, height: number) => this.view === "changes" ? this.renderDiff(panelWidth, height) : this.view === "activity" ? this.renderActivityDetail(panelWidth, height) : this.renderCheckDetail(panelWidth, height);
     if (inner >= 76) {
       const listWidth = Math.max(24, Math.floor(inner * 0.38));
       const detailWidth = inner - listWidth - 3;
@@ -452,7 +487,8 @@ export class GitExplorer implements Focusable {
       content.push(...renderList(inner, 1));
       if (bodyHeight > 1) content.push(...renderDetail(inner, 1));
     } else {
-      const listHeight = Math.min(this.view === "activity" ? 7 : 5, Math.max(bodyHeight >= 5 ? 2 : 1, Math.floor((bodyHeight - 1) * (this.view === "activity" ? 0.42 : 0.35))));
+      const timelineView = this.view === "activity" || this.view === "checks";
+      const listHeight = Math.min(timelineView ? 7 : 5, Math.max(bodyHeight >= 5 ? 2 : 1, Math.floor((bodyHeight - 1) * (timelineView ? 0.42 : 0.35))));
       const detailHeight = bodyHeight - listHeight - 1;
       content.push(...renderList(inner, listHeight));
       content.push(this.theme.fg("borderMuted", border.horizontal.repeat(inner)));
@@ -462,8 +498,8 @@ export class GitExplorer implements Focusable {
     this.widgetDockStartRow = widgetDock.length > 0 ? content.length : -1;
     content.push(...widgetDock);
     const gitAction = this.scope === "working" ? "s Stage · x Discard" : "s Unstage";
-    const fullHints = this.view === "changes" ? `j/k Move · ${gitAction} · m Menu · e Open · Tab Scope · q Back` : "g Changes · j/k Move · e Open · w Widgets · [ ] Resize · q Back";
-    const compactHints = this.view === "changes" ? `${this.scope === "working" ? "s Stage" : "s Unstage"} · m Menu · e Open · Tab · q` : "g Git · j/k · e Open · w Dock · [ ] · q";
+    const fullHints = this.view === "changes" ? `j/k Move · ${gitAction} · m Menu · e Open · Tab Scope · c Checks · q Back` : this.view === "activity" ? "g Changes · c Checks · j/k Move · e Open · w Widgets · q Back" : "g Changes · a Activity · j/k Move · e Open location · q Back";
+    const compactHints = this.view === "changes" ? `${this.scope === "working" ? "s Stage" : "s Unstage"} · m Menu · e Open · c Checks · q` : this.view === "activity" ? "g Git · c Checks · j/k · e Open · q" : "g Git · a Act · j/k · e Jump · q";
     content.push(this.theme.fg("dim", visibleWidth(fullHints) <= inner ? fullHints : compactHints));
 
     const borderToken = this.focused ? "borderAccent" : "border";
@@ -703,6 +739,81 @@ export class GitExplorer implements Focusable {
     const visible = Math.max(0, height - 1);
     this.activityDetailScroll = Math.min(this.activityDetailScroll, Math.max(0, detail.length - visible));
     return [header, ...detail.slice(this.activityDetailScroll, this.activityDetailScroll + visible)].slice(0, height);
+  }
+
+  private selectCheck(index: number): void {
+    const count = this.activity?.diagnostics.length ?? 0;
+    const next = Math.max(0, Math.min(index, Math.max(0, count - 1)));
+    if (next === this.checkSelected) return;
+    this.checkSelected = next;
+    this.checkDetailScroll = 0;
+    this.requestRender();
+  }
+
+  private scrollCheckDetail(delta: number): void {
+    this.checkDetailScroll = Math.max(0, Math.min(this.checkDetailScroll + delta, Math.max(0, this.lastCheckDetailCount - 1)));
+    this.requestRender();
+  }
+
+  private renderCheckList(width: number, height: number): string[] {
+    const diagnostics = this.activity?.diagnostics ?? [];
+    const errors = diagnostics.filter((diagnostic) => diagnostic.severity === "error").length;
+    const warnings = diagnostics.length - errors;
+    const summary = diagnostics.length ? `  ·  ${errors} errors${warnings ? `  ·  ${warnings} warnings` : ""}` : "";
+    const lines = [this.theme.fg(this.focus === "list" ? "accent" : "muted", `${this.focus === "list" ? "▶" : " "} PROBLEMS  ${diagnostics.length}${summary}`)];
+    const visible = Math.max(1, height - 1);
+    if (this.checkSelected < this.checkStart) this.checkStart = this.checkSelected;
+    if (this.checkSelected >= this.checkStart + visible) this.checkStart = this.checkSelected - visible + 1;
+    if (!diagnostics.length) {
+      const checks = (this.activity?.records ?? []).filter((record) => ["test", "build", "lint"].includes(record.kind));
+      const running = checks.find((record) => record.status === "running");
+      const failed = checks.find((record) => record.status === "error");
+      lines.push(running
+        ? this.theme.fg("warning", `  ● ${running.what}`)
+        : failed
+          ? this.theme.fg("error", "  ✕ Check failed · no file locations parsed")
+          : checks.length
+            ? this.theme.fg("success", "  ✓ No problems from recent checks")
+            : this.theme.fg("muted", "  Run tests, typecheck, or lint to populate checks"));
+    }
+    for (let index = this.checkStart; index < Math.min(diagnostics.length, this.checkStart + visible); index++) {
+      const diagnostic = diagnostics[index]!;
+      const marker = index === this.checkSelected ? "›" : " ";
+      const icon = this.theme.fg(diagnostic.severity === "error" ? "error" : "warning", diagnostic.severity === "error" ? "✕" : "▲");
+      const location = `${diagnostic.path}:${diagnostic.line}:${diagnostic.column}`;
+      const text = `${marker} ${icon} ${this.theme.fg("muted", diagnostic.source.toUpperCase())} ${location}  ${diagnostic.message}`;
+      const row = fitWithSuffix(text, this.theme.fg("accent", " ↗"), width);
+      lines.push(index === this.checkSelected ? this.theme.bg("selectedBg", row) : row);
+    }
+    while (lines.length < height) lines.push("");
+    return lines.slice(0, height);
+  }
+
+  private renderCheckDetail(width: number, height: number): string[] {
+    const diagnostic = this.activity?.diagnostics[this.checkSelected];
+    const header = this.theme.fg(this.focus === "diff" ? "accent" : "muted", `${this.focus === "diff" ? "▶" : " "} CHECK INSIGHT`);
+    if (!diagnostic) {
+      const recent = (this.activity?.records ?? []).filter((record) => ["test", "build", "lint"].includes(record.kind)).slice(0, Math.max(0, height - 1));
+      if (!recent.length) return [header, this.theme.fg("muted", "Checks from test, typecheck, lint, and build appear here")].slice(0, height);
+      return [header, ...recent.map((record) => `${this.theme.fg(record.status === "error" ? "error" : record.status === "running" ? "warning" : "success", record.status === "error" ? "✕" : record.status === "running" ? "●" : "✓")} ${this.theme.fg("muted", record.kind.toUpperCase())} ${this.theme.fg("text", sanitizeTerminalLine(record.result))}`)].slice(0, height);
+    }
+    const check = this.activity?.records.find((record) => record.id === diagnostic.checkId);
+    const fields: Array<[string, string, "text" | "muted" | "error" | "warning"]> = [
+      ["LOCATION", `${diagnostic.path}:${diagnostic.line}:${diagnostic.column}`, "text"],
+      ["SEVERITY", diagnostic.severity.toUpperCase(), diagnostic.severity],
+      ["SOURCE", diagnostic.source.toUpperCase(), "muted"],
+      ["MESSAGE", diagnostic.message, diagnostic.severity],
+      ["COMMAND", check?.how ?? "Unknown check command", "muted"],
+    ];
+    const detail: string[] = [];
+    for (const [label, value, color] of fields) {
+      const prefix = this.theme.fg("dim", label.padEnd(9));
+      detail.push(...wrapTextWithAnsi(`${prefix}${this.theme.fg(color, sanitizeTerminalLine(value))}`, Math.max(1, width)));
+    }
+    this.lastCheckDetailCount = detail.length;
+    const visible = Math.max(0, height - 1);
+    this.checkDetailScroll = Math.min(this.checkDetailScroll, Math.max(0, detail.length - visible));
+    return [header, ...detail.slice(this.checkDetailScroll, this.checkDetailScroll + visible)].slice(0, height);
   }
 
   private renderList(width: number, height: number): string[] {

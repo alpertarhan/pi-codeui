@@ -75,7 +75,7 @@ test("embedded Explorer supports mouse tabs, scopes, and row selection", async (
   assert.equal(explorer.scope, "staged");
   explorer.handleMouse(5, 4, 60);
   assert.equal(explorer.selected, 1);
-  explorer.handleMouse(58, 0, 60);
+  explorer.handleMouse(48, 0, 60);
   assert.match(stripTerminalSequences(explorer.render(60).join("\n")), /ACTIVITY\s+0/);
   explorer.dispose();
 });
@@ -235,6 +235,27 @@ test("Explorer shows NOW, newest-touched files, and WHAT/WHY/HOW activity insigh
   assert.match(insight, /HOW\s+1 replacement/);
   assert.match(insight, /RESULT\s+Completed in 80ms/);
   explorer.dispose();
+  activity.dispose();
+});
+
+test("Checks view lists diagnostics and opens Neovim at the exact location", async () => {
+  const activity = new ActivityTracker("/repo");
+  activity.start({ type: "tool_execution_start", toolCallId: "check", toolName: "bash", args: { command: "npm run typecheck" } }, 1);
+  activity.end({ type: "tool_execution_end", toolCallId: "check", toolName: "bash", result: { content: [{ type: "text", text: "src/app.ts(12,5): error TS2322: Wrong type" }] }, isError: true }, 20);
+  let result: unknown;
+  const explorer = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, (value) => { result = value; }, {
+    activity,
+    getTerminalRows: () => 30,
+  });
+  await settle();
+  explorer.handleInput("c");
+  const checks = stripTerminalSequences(explorer.render(80).join("\n"));
+  assert.match(checks, /CHECKS/);
+  assert.match(checks, /PROBLEMS\s+1/);
+  assert.match(checks, /src\/app\.ts:12:5/);
+  assert.match(checks, /Wrong type/);
+  explorer.handleInput("e");
+  assert.deepEqual(result, { action: "edit", root: "/repo", path: "src/app.ts", line: 12, column: 5 });
   activity.dispose();
 });
 
