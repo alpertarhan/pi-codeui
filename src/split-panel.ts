@@ -51,6 +51,18 @@ export class SplitPanelController {
     return (this.tui as InternalViewportTui).layoutRoot === this.splitRoot;
   }
 
+  get diagnostic(): string {
+    const settings = this.options.getSettings().explorer;
+    if (this.installed) return `split active (${this.tui.terminal.columns} cols)`;
+    if (settings.layout !== "split") return "overlay configured";
+    if (this.tui.mode !== "fullscreen") return `split fallback (TUI mode: ${this.tui.mode})`;
+    if (this.tui.terminal.columns < settings.minOverlayColumns) {
+      return `split fallback (${this.tui.terminal.columns} < ${settings.minOverlayColumns} cols)`;
+    }
+    if (!isViewportTUI(this.tui)) return "split fallback (viewport API unavailable)";
+    return "split fallback (layout root unavailable)";
+  }
+
   ensure(): boolean {
     if (this.disposed) return false;
     const settings = this.options.getSettings().explorer;

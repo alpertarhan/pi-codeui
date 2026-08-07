@@ -49,6 +49,7 @@ test("fullscreen split wraps and restores Pi's existing layout root", () => {
 
   assert.equal(controller.ensure(), true);
   assert.equal(controller.installed, true);
+  assert.match(controller.diagnostic, /split active \(160 cols\)/);
   assert.ok((tui as any).layoutRoot instanceof HStack);
   const splitLines = ((tui as any).layoutRoot as HStack).render(160);
   assert.ok((splitLines[1] ?? "").indexOf("Git Explorer") > 40, "Explorer must render beside, not over, the main root");
@@ -78,6 +79,7 @@ test("split stays disabled for overlay preference and narrow terminals", () => {
   });
 
   assert.equal(controller.ensure(), false);
+  assert.match(controller.diagnostic, /90 < 100 cols/);
   (tui.terminal as any).columns = 160;
   settings.explorer.layout = "overlay";
   assert.equal(controller.ensure(), false);

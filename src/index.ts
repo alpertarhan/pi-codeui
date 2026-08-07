@@ -252,7 +252,7 @@ export default function codeui(pi: ExtensionAPI): void {
         `Glyph preset: ${glyphs.preset}`,
         `Samples: ${glyphs.icons.brand} ${glyphs.icons.branch} ${glyphs.icons.modified} ${glyphs.icons.added} ${glyphs.icons.untracked}`,
         `Terminal: ${terminal}`,
-        `Explorer layout: ${current.explorer.layout === "split" ? (runtime?.split?.installed ? "split active" : "split fallback") : "overlay"}`,
+        `Explorer layout: ${runtime?.split?.diagnostic ?? current.explorer.layout}`,
         `External editor: ${current.vim.externalEditor.join(" ")}`,
         `Embedded Vim: ${(runtime?.vimOverride ?? current.vim.enabled) ? "enabled" : "disabled"}`,
         "Font family, size, features, and ligatures are managed by the host terminal.",
