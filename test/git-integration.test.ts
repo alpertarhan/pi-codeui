@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { ExecOptions, ExecResult } from "@earendil-works/pi-coding-agent";
-import { detectRoot, getDiff, getLineStats, getRepoState, GitCancelledError, GitError, previewUntracked, type GitExec } from "../src/git/git.ts";
+import { detectRoot, discardTrackedFile, getDiff, getLineStats, getRepoState, GitCancelledError, GitError, previewUntracked, stageFile, unstageFile, type GitExec } from "../src/git/git.ts";
 
 const exec: GitExec = (command: string, args: string[], options: ExecOptions = {}) => new Promise((resolve, reject) => {
   const child = spawn(command, args, { cwd: options.cwd, shell: false });
@@ -65,6 +65,8 @@ test("Git calls forward argv/options and expose typed command and parse failures
   assert.equal(call?.options?.signal, signal);
   await getDiff(capture, "/repo", "file", "working", { ignoreWhitespace: true });
   assert.deepEqual(call?.args, ["diff", "--no-ext-diff", "--no-color", "--unified=3", "--ignore-all-space", "--", "file"]);
+  await stageFile(capture, "/repo", "new name.ts", { relatedPath: "old name.ts" });
+  assert.deepEqual(call?.args, ["add", "--", "new name.ts", "old name.ts"]);
 
   const commandFailure: GitExec = async () => ({ stdout: "", stderr: "broken", code: 2, killed: false });
   await assert.rejects(() => getDiff(commandFailure, "/repo", "file", "working"), (error: unknown) => error instanceof GitError && error.code === 2);
@@ -74,6 +76,30 @@ test("Git calls forward argv/options and expose typed command and parse failures
   await assert.rejects(() => getRepoState(malformed, "/repo"), GitError);
   const rejected: GitExec = async () => { throw new Error("cannot spawn"); };
   await assert.rejects(() => detectRoot(rejected, "/repo"), GitError);
+});
+
+test("safe file actions stage, unstage, and discard without shell interpolation", async (t) => {
+  const root = await repository(t);
+  const path = "-odd file.ts";
+  await writeFile(join(root, path), "base\n");
+  await git(root, "add", "--", path);
+  await git(root, "commit", "-m", "base");
+
+  await writeFile(join(root, path), "changed\n");
+  await stageFile(exec, root, path);
+  assert.match((await git(root, "status", "--short", "--", path)), /^M /);
+  await unstageFile(exec, root, path);
+  assert.match((await git(root, "status", "--short", "--", path)), /^ M/);
+  await discardTrackedFile(exec, root, path);
+  assert.equal(await git(root, "status", "--short", "--", path), "");
+
+  await assert.rejects(() => stageFile(exec, root, "../outside"), /escapes the repository/);
+
+  const unborn = await repository(t);
+  await writeFile(join(unborn, "new.ts"), "new\n");
+  await stageFile(exec, unborn, "new.ts");
+  await unstageFile(exec, unborn, "new.ts", { unbornAdded: true });
+  assert.match(await git(unborn, "status", "--short", "--", "new.ts"), /^\?\?/);
 });
 
 test("real Git repository status, diffs, stats, and root detection", async (t) => {

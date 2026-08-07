@@ -51,6 +51,9 @@ export interface SplitPanelOptions {
   theme: Theme;
   header?: DisposableComponent;
   footer?: DisposableComponent;
+  confirm?: (title: string, message: string) => Promise<boolean>;
+  select?: (title: string, options: string[]) => Promise<string | undefined>;
+  notify?: (message: string, level: "info" | "warning" | "error") => void;
   onAction: (result: Exclude<GitExplorerResult, undefined>) => void;
 }
 
@@ -210,8 +213,10 @@ export class SplitPanelController {
         this.focus();
         const localX = x - panelStart;
         const localY = y - headerRows;
-        this.panel.handleMouse(localX, localY, this.panelColumns);
-        if ((button & 64) !== 0) this.panel.handleInput((button & 3) === 0 ? "k" : "j");
+        const rightClick = (button & 64) === 0 && (button & 3) === 2;
+        this.panel.handleMouse(localX, localY, this.panelColumns, Date.now(), !rightClick);
+        if (rightClick) this.panel.openMouseActions();
+        else if ((button & 64) !== 0) this.panel.handleInput((button & 3) === 0 ? "k" : "j");
       }
       return { consume: true };
     };
@@ -277,6 +282,9 @@ export class SplitPanelController {
         getTerminalRows: () => this.tui.terminal.rows,
         getResizeStatus: () => this.resizeNotice,
         getDockedWidgets: () => this.dockedWidgets,
+        confirm: this.options.confirm,
+        select: this.options.select,
+        notify: this.options.notify,
         activity: this.options.activity,
       },
     );

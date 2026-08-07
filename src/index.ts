@@ -146,6 +146,9 @@ export default function codeui(pi: ExtensionAPI): void {
         theme,
         header: current.chrome.header ? createChromeBar("header", tui, theme, git, () => active.settings.current, context) : undefined,
         footer: current.chrome.footer ? createChromeBar("footer", tui, theme, git, () => active.settings.current, context) : undefined,
+        confirm: (title, message) => ctx.ui.confirm(title, message),
+        select: (title, options) => ctx.ui.select(title, options),
+        notify: (message, level) => ctx.ui.notify(message, level),
         onAction: (result) => void handleExplorerAction(active, result),
       });
       active.split.ensure();
@@ -196,7 +199,12 @@ export default function codeui(pi: ExtensionAPI): void {
     let result: GitExplorerResult;
     try {
       result = await ctx.ui.custom<GitExplorerResult>((tui, theme, _keybindings, done) => {
-        const explorer = new GitExplorer(active.git, pi.exec.bind(pi), () => active.settings.current, theme, () => tui.requestRender(), done, { activity: active.activity });
+        const explorer = new GitExplorer(active.git, pi.exec.bind(pi), () => active.settings.current, theme, () => tui.requestRender(), done, {
+          activity: active.activity,
+          confirm: (title, message) => ctx.ui.confirm(title, message),
+          select: (title, options) => ctx.ui.select(title, options),
+          notify: (message, level) => ctx.ui.notify(message, level),
+        });
         active.explorer = explorer;
         return explorer;
       }, wide ? {

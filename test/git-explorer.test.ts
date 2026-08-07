@@ -80,6 +80,28 @@ test("embedded Explorer supports mouse tabs, scopes, and row selection", async (
   explorer.dispose();
 });
 
+test("right-click target opens the selected file action menu", async () => {
+  const calls: string[][] = [];
+  const git = controller();
+  git.refresh = async () => {};
+  let menuTitle = "";
+  const explorer = new GitExplorer(git, async (_command, args) => {
+    calls.push(args);
+    return { stdout: "", stderr: "", code: 0, killed: false };
+  }, () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, {
+    embedded: true,
+    getTerminalRows: () => 24,
+    select: async (title) => { menuTitle = title; return "Stage file"; },
+  });
+  await settle();
+  explorer.handleMouse(5, 3, 60, 1_000, false);
+  explorer.openMouseActions();
+  await settle();
+  assert.match(menuTitle, /both\.ts/);
+  assert.ok(calls.some((args) => args[0] === "add" && args.at(-1) === "both.ts"));
+  explorer.dispose();
+});
+
 test("docked extension widgets render and collapse inside the rail", async () => {
   const widget = { render: () => ["", "● Todos (0/2)", "├─ ◐ Implement dock", "└─ ○ Verify", ""], invalidate: () => {} };
   const explorer = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, {
@@ -113,6 +135,46 @@ test("completed todo widgets auto-compact instead of filling the rail", async ()
   assert.doesNotMatch(compact, /0 actions|Click ↗/);
   explorer.handleInput("w");
   assert.match(stripTerminalSequences(explorer.render(60).join("\n")), /Old task/);
+  explorer.dispose();
+});
+
+test("safe Git actions stage, unstage, confirm discard, and guard untracked deletion", async () => {
+  const calls: string[][] = [];
+  const exec: GitExec = async (_command, args) => {
+    calls.push(args);
+    return { stdout: args[0] === "diff" ? "@@ -1 +1 @@\n-old\n+new" : "", stderr: "", code: 0, killed: false };
+  };
+  const git = controller();
+  git.refresh = async () => {};
+  let confirmations = 0;
+  const notices: string[] = [];
+  const explorer = new GitExplorer(git, exec, () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, {
+    confirm: async () => { confirmations++; return true; },
+    notify: (message) => notices.push(message),
+  });
+  await settle();
+
+  explorer.handleInput("s");
+  await settle();
+  assert.ok(calls.some((args) => args[0] === "add" && args.at(-1) === "both.ts"));
+  explorer.handleInput("\t");
+  explorer.handleInput("s");
+  await settle();
+  assert.ok(calls.some((args) => args[0] === "restore" && args[1] === "--staged"));
+  explorer.handleInput("\t");
+  explorer.handleInput("x");
+  await settle();
+  assert.equal(confirmations, 1);
+  assert.ok(calls.some((args) => args[0] === "restore" && args[1] === "--worktree"));
+  assert.ok(notices.some((message) => /Discarded/.test(message)));
+
+  explorer.handleInput("j");
+  explorer.handleInput("j");
+  explorer.handleInput("j");
+  explorer.handleInput("x");
+  await settle();
+  assert.equal(confirmations, 1, "untracked files must never reach destructive confirmation");
+  assert.match(stripTerminalSequences(explorer.render(70).join("\n")), /Untracked deletion is intentionally disabled/);
   explorer.dispose();
 });
 

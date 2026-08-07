@@ -138,13 +138,40 @@ export async function getLineStats(exec: GitExec, root: string, scope: DiffScope
   }
 }
 
-export async function previewUntracked(root: string, path: string, maxBytes = 256 * 1024): Promise<UntrackedPreview> {
-  nonNegativeInteger(maxBytes, "maxBytes");
-  if (!path || isAbsolute(path)) throw new GitError("untracked path must be relative to the repository");
+function repositoryPath(root: string, path: string): { absolutePath: string; fromRoot: string } {
+  if (!path || isAbsolute(path) || path.includes("\0")) throw new GitError("Git path must be relative to the repository");
   const absoluteRoot = resolve(root);
   const absolutePath = resolve(absoluteRoot, path);
   const fromRoot = relative(absoluteRoot, absolutePath);
-  if (fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) throw new GitError("untracked path escapes the repository");
+  if (!fromRoot || fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) throw new GitError("Git path escapes the repository");
+  return { absolutePath, fromRoot };
+}
+
+async function mutateFiles(exec: GitExec, root: string, paths: string[], args: string[], options: GitCallOptions = {}): Promise<void> {
+  for (const path of paths) repositoryPath(root, path);
+  const command = [...args, "--", ...paths];
+  const result = await run(exec, command, root, options);
+  if (result.code !== 0) throw failed(command, result);
+}
+
+export async function stageFile(exec: GitExec, root: string, path: string, options: GitCallOptions & { relatedPath?: string } = {}): Promise<void> {
+  const { relatedPath, ...callOptions } = options;
+  await mutateFiles(exec, root, relatedPath ? [path, relatedPath] : [path], ["add"], callOptions);
+}
+
+export async function unstageFile(exec: GitExec, root: string, path: string, options: GitCallOptions & { unbornAdded?: boolean; relatedPath?: string } = {}): Promise<void> {
+  const { unbornAdded = false, relatedPath, ...callOptions } = options;
+  await mutateFiles(exec, root, relatedPath ? [path, relatedPath] : [path], unbornAdded ? ["rm", "--cached", "--quiet"] : ["restore", "--staged"], callOptions);
+}
+
+export async function discardTrackedFile(exec: GitExec, root: string, path: string, options: GitCallOptions = {}): Promise<void> {
+  await mutateFiles(exec, root, [path], ["restore", "--worktree"], options);
+}
+
+export async function previewUntracked(root: string, path: string, maxBytes = 256 * 1024): Promise<UntrackedPreview> {
+  nonNegativeInteger(maxBytes, "maxBytes");
+  const absoluteRoot = resolve(root);
+  const { absolutePath, fromRoot } = repositoryPath(root, path);
 
   let current = absoluteRoot;
   for (const part of fromRoot.split(sep)) {

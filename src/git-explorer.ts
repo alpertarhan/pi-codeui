@@ -1,7 +1,7 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, stripTerminalSequences, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type Focusable } from "@earendil-works/pi-tui";
 import { formatDuration, relativeTime, type ActivityRecord, type ActivityTracker } from "./activity.ts";
-import { getDiff, previewUntracked, type DiffScope, type GitExec } from "./git/git.ts";
+import { discardTrackedFile, getDiff, previewUntracked, stageFile, unstageFile, type DiffScope, type GitExec } from "./git/git.ts";
 import type { FileChange, TextResult } from "./git/types.ts";
 import type { GitStateController } from "./git-state.ts";
 import { resolveGlyphs } from "./glyphs.ts";
@@ -10,9 +10,13 @@ import { sanitizeTerminalLine } from "./terminal.ts";
 
 export type ExplorerScope = "working" | "staged";
 type ExplorerView = "changes" | "activity";
+type GitFileAction = "stage" | "unstage" | "discard";
 export type GitExplorerResult = { action: "edit"; root: string; path: string } | undefined;
 export interface GitExplorerOptions {
   embedded?: boolean;
+  confirm?: (title: string, message: string) => Promise<boolean>;
+  select?: (title: string, options: string[]) => Promise<string | undefined>;
+  notify?: (message: string, level: "info" | "warning" | "error") => void;
   reservedRows?: number;
   getTerminalRows?: () => number;
   getResizeStatus?: () => string | undefined;
@@ -95,6 +99,10 @@ export class GitExplorer implements Focusable {
   private widgetDockExpanded = false;
   private widgetDockEffectiveCollapsed = false;
   private widgetDockStartRow = -1;
+  private mouseFileTarget = false;
+  private fileActionStatus: { text: string; tone: "success" | "warning" | "error" } | undefined;
+  private fileActionTimer: ReturnType<typeof setTimeout> | undefined;
+  private fileActionRunning = false;
   private files: FileChange[] = [];
   private diff: DiffState = { kind: "empty" };
   private abort: AbortController | undefined;
@@ -107,6 +115,9 @@ export class GitExplorer implements Focusable {
   private readonly getTerminalRows: () => number;
   private readonly getResizeStatus: () => string | undefined;
   private readonly getDockedWidgets: () => readonly Component[];
+  private readonly confirm: (title: string, message: string) => Promise<boolean>;
+  private readonly selectMenu: (title: string, options: string[]) => Promise<string | undefined>;
+  private readonly notify: (message: string, level: "info" | "warning" | "error") => void;
   private readonly activity: ActivityTracker | undefined;
   private readonly unsubscribe: () => void;
   private readonly unsubscribeActivity: (() => void) | undefined;
@@ -137,6 +148,9 @@ export class GitExplorer implements Focusable {
     this.getTerminalRows = options.getTerminalRows ?? (() => process.stdout.rows ?? 24);
     this.getResizeStatus = options.getResizeStatus ?? (() => undefined);
     this.getDockedWidgets = options.getDockedWidgets ?? (() => []);
+    this.confirm = options.confirm ?? (async () => false);
+    this.selectMenu = options.select ?? (async () => undefined);
+    this.notify = options.notify ?? (() => {});
     this.activity = options.activity;
     this.unsubscribe = git.onChange(() => this.syncFiles());
     this.unsubscribeActivity = this.activity?.onChange(() => {
@@ -166,6 +180,18 @@ export class GitExplorer implements Focusable {
     }
     if (data === "w" && this.getDockedWidgets().length > 0) {
       this.toggleWidgetDock();
+      return;
+    }
+    if (this.view === "changes" && data === "s") {
+      void this.runFileAction(this.scope === "working" ? "stage" : "unstage");
+      return;
+    }
+    if (this.view === "changes" && data === "x") {
+      void this.runFileAction("discard");
+      return;
+    }
+    if (this.view === "changes" && data === "m") {
+      void this.openActionMenu();
       return;
     }
     if (this.view === "changes" && matchesKey(data, Key.tab)) {
@@ -207,7 +233,8 @@ export class GitExplorer implements Focusable {
     else if (down || up) this.select(this.selected + (down ? 1 : -1));
   }
 
-  handleMouse(x: number, y: number, width: number, now = Date.now()): boolean {
+  handleMouse(x: number, y: number, width: number, now = Date.now(), allowOpen = true): boolean {
+    this.mouseFileTarget = false;
     if (!this.embedded || width < 4 || x < 0 || y < 0) return false;
     const settings = this.getSettings();
     const border = BORDER_PRESETS[settings.appearance.borders];
@@ -269,7 +296,7 @@ export class GitExplorer implements Focusable {
       const record = this.activity?.records[index];
       if (record) {
         const doubleClick = this.lastMouseClick?.view === "activity" && this.lastMouseClick.index === index && now - this.lastMouseClick.at <= 500;
-        if (record.path && (doubleClick || localX >= listPanelWidth - 4)) {
+        if (allowOpen && record.path && (doubleClick || localX >= listPanelWidth - 4)) {
           const repo = this.repo();
           if (repo) this.dismiss({ action: "edit", root: repo.root, path: record.path });
           this.lastMouseClick = undefined;
@@ -282,8 +309,9 @@ export class GitExplorer implements Focusable {
       const index = this.listStart + listRow - 1;
       const file = this.files[index];
       if (file) {
+        this.mouseFileTarget = true;
         const doubleClick = this.lastMouseClick?.view === "changes" && this.lastMouseClick.index === index && now - this.lastMouseClick.at <= 500;
-        if (doubleClick || localX >= listPanelWidth - 4) {
+        if (allowOpen && (doubleClick || localX >= listPanelWidth - 4)) {
           const repo = this.repo();
           if (repo) this.dismiss({ action: "edit", root: repo.root, path: file.path });
           this.lastMouseClick = undefined;
@@ -295,6 +323,91 @@ export class GitExplorer implements Focusable {
     }
     this.requestRender();
     return true;
+  }
+
+  openMouseActions(): void {
+    if (this.mouseFileTarget) void this.openActionMenu();
+  }
+
+  private async openActionMenu(): Promise<void> {
+    const file = this.files[this.selected];
+    if (!file || this.fileActionRunning) return;
+    const primary = this.scope === "working" ? (file.conflicted ? "Stage resolved file" : "Stage file") : "Unstage file";
+    const options = [primary, "Open in Neovim"];
+    if (this.scope === "working" && !file.untracked && !file.conflicted && !file.oldPath) options.push("Discard working changes…");
+    const choice = await this.selectMenu(`Actions · ${sanitizeTerminalLine(file.path)}`, options);
+    if (choice === primary) await this.runFileAction(this.scope === "working" ? "stage" : "unstage");
+    else if (choice === "Open in Neovim") {
+      const repo = this.repo();
+      if (repo) this.dismiss({ action: "edit", root: repo.root, path: file.path });
+    } else if (choice === "Discard working changes…") await this.runFileAction("discard");
+  }
+
+  private async runFileAction(action: GitFileAction): Promise<void> {
+    const repo = this.repo();
+    const file = this.files[this.selected];
+    if (!repo || !file || this.fileActionRunning) return;
+    if (this.activity?.isEditing(file.path)) {
+      this.setFileActionStatus("Wait for the AI to finish editing this file", "warning");
+      return;
+    }
+    if (action === "unstage" && (this.scope !== "staged" || file.conflicted)) {
+      this.setFileActionStatus(file.conflicted ? "Resolve the conflict before unstaging" : "Switch to Staged to unstage", "warning");
+      return;
+    }
+    if (action === "discard") {
+      if (this.scope !== "working") {
+        this.setFileActionStatus("Discard is only available in Working", "warning");
+        return;
+      }
+      if (file.untracked) {
+        this.setFileActionStatus("Untracked deletion is intentionally disabled", "warning");
+        return;
+      }
+      if (file.conflicted) {
+        this.setFileActionStatus("Conflict discard is intentionally disabled", "warning");
+        return;
+      }
+      if (file.oldPath) {
+        this.setFileActionStatus("Rename discard is intentionally disabled", "warning");
+        return;
+      }
+      const approved = await this.confirm("Discard working changes?", `${file.path}\n\nThis restores the tracked file to its index version and cannot be undone.`);
+      if (!approved) return;
+    }
+
+    const verb = action === "stage" ? "Staging" : action === "unstage" ? "Unstaging" : "Discarding changes in";
+    this.fileActionRunning = true;
+    this.setFileActionStatus(`${verb} ${file.path}…`, "warning", 0);
+    try {
+      if (action === "stage") await stageFile(this.exec, repo.root, file.path, { relatedPath: file.oldPath });
+      else if (action === "unstage") await unstageFile(this.exec, repo.root, file.path, { unbornAdded: repo.status.branch.unborn && file.index === "A", relatedPath: file.oldPath });
+      else await discardTrackedFile(this.exec, repo.root, file.path);
+      await this.git.refresh();
+      this.syncFiles();
+      const done = action === "stage" ? "Staged" : action === "unstage" ? "Unstaged" : "Discarded changes in";
+      this.setFileActionStatus(`${done} ${file.path}`, "success");
+      this.notify(`${done} ${file.path}`, "info");
+    } catch (error) {
+      const message = sanitizeTerminalLine((error as Error).message);
+      this.setFileActionStatus(`${action} failed · ${message}`, "error", 5_000);
+      this.notify(`Git ${action} failed: ${message}`, "error");
+    } finally {
+      this.fileActionRunning = false;
+    }
+  }
+
+  private setFileActionStatus(text: string, tone: "success" | "warning" | "error", timeout = 2_500): void {
+    if (this.fileActionTimer) clearTimeout(this.fileActionTimer);
+    this.fileActionStatus = { text, tone };
+    this.requestRender();
+    if (timeout <= 0) return;
+    this.fileActionTimer = setTimeout(() => {
+      this.fileActionStatus = undefined;
+      this.fileActionTimer = undefined;
+      this.requestRender();
+    }, timeout);
+    this.fileActionTimer.unref?.();
   }
 
   render(width: number): string[] {
@@ -348,8 +461,9 @@ export class GitExplorer implements Focusable {
     if (gap) content.push("");
     this.widgetDockStartRow = widgetDock.length > 0 ? content.length : -1;
     content.push(...widgetDock);
-    const fullHints = this.view === "changes" ? "a Activity · j/k Move · Tab Scope · e Open · w Widgets · [ ] Resize · q Back" : "g Changes · j/k Move · e Open · w Widgets · [ ] Resize · q Back";
-    const compactHints = this.view === "changes" ? "a Act · j/k · e Open · w Dock · [ ] · q" : "g Git · j/k · e Open · w Dock · [ ] · q";
+    const gitAction = this.scope === "working" ? "s Stage · x Discard" : "s Unstage";
+    const fullHints = this.view === "changes" ? `j/k Move · ${gitAction} · m Menu · e Open · Tab Scope · q Back` : "g Changes · j/k Move · e Open · w Widgets · [ ] Resize · q Back";
+    const compactHints = this.view === "changes" ? `${this.scope === "working" ? "s Stage" : "s Unstage"} · m Menu · e Open · Tab · q` : "g Git · j/k · e Open · w Dock · [ ] · q";
     content.push(this.theme.fg("dim", visibleWidth(fullHints) <= inner ? fullHints : compactHints));
 
     const borderToken = this.focused ? "borderAccent" : "border";
@@ -433,6 +547,8 @@ export class GitExplorer implements Focusable {
     this.abort?.abort();
     this.abort = undefined;
     this.generation++;
+    if (this.fileActionTimer) clearTimeout(this.fileActionTimer);
+    this.fileActionTimer = undefined;
     this.unsubscribe();
     this.unsubscribeActivity?.();
   }
@@ -520,6 +636,10 @@ export class GitExplorer implements Focusable {
 
   private renderNow(width: number, maxLines: number): string[] {
     if (maxLines <= 0) return [];
+    if (this.fileActionStatus) {
+      const icon = this.fileActionStatus.tone === "success" ? "✓" : this.fileActionStatus.tone === "error" ? "✕" : "●";
+      return [truncateToWidth(`${this.theme.fg("dim", "NOW  ")}${this.theme.fg(this.fileActionStatus.tone, icon)} ${this.theme.fg("text", this.fileActionStatus.text)}`, width, "…")];
+    }
     const record = this.activity?.current;
     if (!record) return [this.theme.fg("dim", "NOW  ○ ready · awaiting your next instruction")].slice(0, maxLines);
     const status = record.status === "running" ? this.theme.fg("warning", "●") : record.status === "error" ? this.theme.fg("error", "✕") : this.theme.fg("success", "✓");
