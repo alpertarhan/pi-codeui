@@ -17,6 +17,8 @@ export interface CodeuiSettings {
     placement: "aboveEditor" | "belowEditor";
   };
   explorer: {
+    layout: "split" | "overlay";
+    splitWidth: `${number}%`;
     overlayWidth: `${number}%`;
     minOverlayColumns: number;
     diffContext: number;
@@ -42,7 +44,7 @@ export const DEFAULT_SETTINGS: Readonly<CodeuiSettings> = Object.freeze({
     icons: Object.freeze({}),
   }),
   widget: Object.freeze({ enabled: true, maxFiles: 4, placement: "aboveEditor" }),
-  explorer: Object.freeze({ overlayWidth: "52%", minOverlayColumns: 100, diffContext: 3, maxDiffLines: 500 }),
+  explorer: Object.freeze({ layout: "split", splitWidth: "34%", overlayWidth: "52%", minOverlayColumns: 100, diffContext: 3, maxDiffLines: 500 }),
   vim: Object.freeze({ enabled: false, startMode: "insert", externalEditor: Object.freeze(["nvim"]) as unknown as string[] }),
   git: Object.freeze({ showUntracked: true, ignoreWhitespace: false }),
 });
@@ -96,7 +98,7 @@ export function normalizeSettings(raw: unknown, inherited: Readonly<CodeuiSettin
   const widget = section("widget");
   reportUnknown(widget, ["enabled", "maxFiles", "placement"], "widget", warnings);
   const explorer = section("explorer");
-  reportUnknown(explorer, ["overlayWidth", "minOverlayColumns", "diffContext", "maxDiffLines"], "explorer", warnings);
+  reportUnknown(explorer, ["layout", "splitWidth", "overlayWidth", "minOverlayColumns", "diffContext", "maxDiffLines"], "explorer", warnings);
   const vim = section("vim");
   reportUnknown(vim, ["enabled", "startMode", "externalEditor"], "vim", warnings);
   const git = section("git");
@@ -117,6 +119,8 @@ export function normalizeSettings(raw: unknown, inherited: Readonly<CodeuiSettin
         placement: enumField(widget, "placement", ["aboveEditor", "belowEditor"], inherited.widget.placement, "widget", warnings),
       },
       explorer: {
+        layout: enumField(explorer, "layout", ["split", "overlay"], inherited.explorer.layout, "explorer", warnings),
+        splitWidth: percentageField(explorer, "splitWidth", 20, 50, inherited.explorer.splitWidth, warnings),
         overlayWidth: percentageField(explorer, "overlayWidth", 30, 90, inherited.explorer.overlayWidth, warnings),
         minOverlayColumns: integerField(explorer, "minOverlayColumns", 60, 300, inherited.explorer.minOverlayColumns, "explorer", warnings),
         diffContext: integerField(explorer, "diffContext", 0, 20, inherited.explorer.diffContext, "explorer", warnings),

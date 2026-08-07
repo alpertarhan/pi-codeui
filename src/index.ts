@@ -8,6 +8,7 @@ import { GitStateController } from "./git-state.ts";
 import { resolveGlyphs } from "./glyphs.ts";
 import { SettingsController } from "./settings-controller.ts";
 import { DEFAULT_SETTINGS } from "./settings.ts";
+import { SplitPanelController } from "./split-panel.ts";
 import { sanitizeTerminalLine } from "./terminal.ts";
 import { VimEditor } from "./vim-editor.ts";
 
@@ -29,6 +30,7 @@ interface Runtime {
   previousEditor?: EditorFactory;
   vimFactory?: NonNullable<EditorFactory>;
   vimOverride?: boolean;
+  split?: SplitPanelController;
 }
 
 export default function codeui(pi: ExtensionAPI): void {
@@ -54,6 +56,7 @@ export default function codeui(pi: ExtensionAPI): void {
     const active = runtime;
     const previousCtx = active?.ctx;
     active?.explorer?.dismiss();
+    active?.split?.dispose();
     if (active) restoreEditor(active);
     active?.unsubscribe();
     active?.git.dispose();
@@ -82,15 +85,50 @@ export default function codeui(pi: ExtensionAPI): void {
     active.ctx.ui.setEditorComponent(active.vimFactory);
   };
 
+  const handleExplorerAction = async (active: Runtime, result: Exclude<GitExplorerResult, undefined>): Promise<void> => {
+    if (result.action !== "edit" || runtime !== active) return;
+    const editor = active.settings.current.vim.externalEditor;
+    const editorResult = await openExternalEditor(active.ctx, editor, result.root, result.path);
+    if (runtime !== active) return;
+    if (editorResult.error) active.ctx.ui.notify(`External editor failed: ${sanitizeTerminalLine(editorResult.error)}`, "error");
+    else if (editorResult.status !== 0) active.ctx.ui.notify(`External editor exited with status ${editorResult.status ?? "unknown"}.`, "warning");
+    await active.git.refresh();
+  };
+
   const installWidget = (): void => {
     if (!runtime) return;
     const active = runtime;
     const { ctx, git } = active;
     const current = active.settings.current;
-    ctx.ui.setWidget(CHANGES_KEY, current.widget.enabled
-      ? (tui, theme) => createChangesWidget(tui, theme, git, () => runtime?.settings.current ?? DEFAULT_SETTINGS)
-      : undefined, { placement: current.widget.placement });
+    ctx.ui.setWidget(CHANGES_KEY, (tui, theme) => {
+      active.split?.dispose();
+      active.split = new SplitPanelController(tui, {
+        git,
+        exec: pi.exec.bind(pi),
+        getSettings: () => active.settings.current,
+        theme,
+        onAction: (result) => void handleExplorerAction(active, result),
+      });
+      active.split.ensure();
+      const split = active.split;
+      const widget = current.widget.enabled
+        ? createChangesWidget(tui, theme, git, () => runtime?.settings.current ?? DEFAULT_SETTINGS)
+        : undefined;
+      return {
+        render: (width: number) => {
+          active.split?.ensure();
+          return widget?.render(width) ?? [];
+        },
+        invalidate: () => widget?.invalidate(),
+        dispose: () => {
+          widget?.dispose?.();
+          split.dispose();
+          if (active.split === split) active.split = undefined;
+        },
+      };
+    }, { placement: current.widget.placement });
     active.explorer?.settingsChanged();
+    active.split?.settingsChanged();
     syncVimEditor();
   };
 
@@ -100,6 +138,10 @@ export default function codeui(pi: ExtensionAPI): void {
       return;
     }
     const active = runtime;
+    if (active.split?.focus()) {
+      void active.git.refresh();
+      return;
+    }
     await active.git.refresh();
     if (runtime !== active) return;
     if (active.git.state.kind === "none") {
@@ -127,13 +169,7 @@ export default function codeui(pi: ExtensionAPI): void {
       active.explorer = undefined;
     }
 
-    if (result?.action !== "edit" || runtime !== active) return;
-    const editor = active.settings.current.vim.externalEditor;
-    const editorResult = await openExternalEditor(ctx, editor, result.root, result.path);
-    if (runtime !== active) return;
-    if (editorResult.error) ctx.ui.notify(`External editor failed: ${sanitizeTerminalLine(editorResult.error)}`, "error");
-    else if (editorResult.status !== 0) ctx.ui.notify(`External editor exited with status ${editorResult.status ?? "unknown"}.`, "warning");
-    await active.git.refresh();
+    if (result && runtime === active) await handleExplorerAction(active, result);
   };
 
   pi.on("session_start", async (_event, ctx) => {
@@ -216,6 +252,7 @@ export default function codeui(pi: ExtensionAPI): void {
         `Glyph preset: ${glyphs.preset}`,
         `Samples: ${glyphs.icons.brand} ${glyphs.icons.branch} ${glyphs.icons.modified} ${glyphs.icons.added} ${glyphs.icons.untracked}`,
         `Terminal: ${terminal}`,
+        `Explorer layout: ${current.explorer.layout === "split" ? (runtime?.split?.installed ? "split active" : "split fallback") : "overlay"}`,
         `External editor: ${current.vim.externalEditor.join(" ")}`,
         `Embedded Vim: ${(runtime?.vimOverride ?? current.vim.enabled) ? "enabled" : "disabled"}`,
         "Font family, size, features, and ligatures are managed by the host terminal.",

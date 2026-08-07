@@ -27,6 +27,8 @@ async function eventually(check: () => boolean, timeout = 2000): Promise<void> {
 
 test("defaults and concrete appearance presets are complete", () => {
   assert.equal(DEFAULT_SETTINGS.appearance.density, "compact");
+  assert.equal(DEFAULT_SETTINGS.explorer.layout, "split");
+  assert.equal(DEFAULT_SETTINGS.explorer.splitWidth, "34%");
   assert.equal(DEFAULT_SETTINGS.explorer.overlayWidth, "52%");
   assert.deepEqual(Object.keys(DENSITY_PRESETS), ["compact", "comfortable"]);
   assert.deepEqual(Object.keys(BORDER_PRESETS), ["rounded", "square", "minimal"]);
@@ -37,12 +39,14 @@ test("normalization ignores unknown keys and inherits invalid values", () => {
     unknown: true,
     appearance: { density: "tiny", borders: "square", extra: 1 },
     widget: { maxFiles: 999, enabled: false },
-    explorer: { overlayWidth: "99%", diffContext: 0 },
+    explorer: { layout: "sideways", splitWidth: "75%", overlayWidth: "99%", diffContext: 0 },
     vim: { externalEditor: [] },
   });
   assert.equal(result.settings.appearance.density, DEFAULT_SETTINGS.appearance.density);
   assert.equal(result.settings.appearance.borders, "square");
   assert.equal(result.settings.widget.maxFiles, DEFAULT_SETTINGS.widget.maxFiles);
+  assert.equal(result.settings.explorer.layout, DEFAULT_SETTINGS.explorer.layout);
+  assert.equal(result.settings.explorer.splitWidth, DEFAULT_SETTINGS.explorer.splitWidth);
   assert.equal(result.settings.widget.enabled, false);
   assert.equal(result.settings.explorer.diffContext, 0);
   assert.ok(result.warnings.some((warning) => warning.includes("unknown field")));

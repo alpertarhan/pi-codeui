@@ -9,6 +9,7 @@ import { sanitizeTerminalLine } from "./terminal.ts";
 
 export type ExplorerScope = "working" | "staged";
 export type GitExplorerResult = { action: "edit"; root: string; path: string } | undefined;
+export interface GitExplorerOptions { embedded?: boolean; }
 type DiffState = { kind: "empty" } | { kind: "loading" } | { kind: "error"; message: string } | ({ kind: "ready" } & TextResult);
 
 const fit = (text: string, width: number): string => {
@@ -34,6 +35,7 @@ export class GitExplorer implements Focusable {
   private disposed = false;
   private dismissed = false;
   private lastDiffPage = 8;
+  private readonly embedded: boolean;
   private readonly unsubscribe: () => void;
   private readonly git: GitStateController;
   private readonly exec: GitExec;
@@ -49,6 +51,7 @@ export class GitExplorer implements Focusable {
     theme: Theme,
     requestRender: () => void,
     close: (result?: GitExplorerResult) => void,
+    options: GitExplorerOptions = {},
   ) {
     this.git = git;
     this.exec = exec;
@@ -56,6 +59,7 @@ export class GitExplorer implements Focusable {
     this.theme = theme;
     this.requestRender = requestRender;
     this.close = close;
+    this.embedded = options.embedded ?? false;
     this.unsubscribe = git.onChange(() => this.syncFiles());
     this.syncFiles();
   }
@@ -103,7 +107,8 @@ export class GitExplorer implements Focusable {
     const density = DENSITY_PRESETS[settings.appearance.density];
     const edge = visibleWidth(border.vertical);
     const inner = Math.max(1, width - edge * 2);
-    const maxRows = Math.max(5, Math.floor((process.stdout.rows ?? 24) * 0.85));
+    const terminalRows = process.stdout.rows ?? 24;
+    const maxRows = this.embedded ? Math.max(5, terminalRows) : Math.max(5, Math.floor(terminalRows * 0.85));
     const gap = density.gap > 0 && maxRows >= 10;
     const bodyHeight = Math.max(1, maxRows - 4 - (gap ? 2 : 0));
     const content: string[] = [];

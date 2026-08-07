@@ -26,8 +26,8 @@ Pi's public extension API already supports the required building blocks:
 
 Important limits:
 
-1. An overlay is not a true resizable split pane. Pi currently does not expose a public API for permanently reflowing the transcript into columns. A true always-on split would require an upstream Pi TUI extension point or a Pi core fork.
-2. Overlay mode is documented as experimental. Narrow terminals therefore need a non-overlay fallback.
+1. Pi currently does not expose a public extension API for permanently reflowing the transcript into columns. For local Pi 0.84 use, the selected experimental adapter identity-checks and wraps the fullscreen renderer's existing `layoutRoot` in pi-tui's `HStack`; it restores the original root on reload/shutdown and falls back if internals are unavailable. The long-term solution remains an upstream `setSidePanel` extension point.
+2. Overlay mode is documented as experimental and remains the regular/narrow-terminal fallback.
 3. Embedded Vim mode will intentionally be a small modal editor, not a complete Vim implementation.
 4. Real Neovim will run as a separate interactive terminal process while Pi's TUI is suspended.
 5. Terminal applications cannot portably change the host terminal's font family or toggle ligatures. Ghostty, Kitty, WezTerm, iTerm2, and similar hosts own those settings; this extension controls glyph/icon presets and validates fallbacks.
@@ -262,6 +262,8 @@ Proposed schema:
     "placement": "aboveEditor"
   },
   "explorer": {
+    "layout": "split",
+    "splitWidth": "34%",
     "overlayWidth": "52%",
     "minOverlayColumns": 100,
     "diffContext": 3,

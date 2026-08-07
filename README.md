@@ -39,6 +39,12 @@ Start a file with the bundled schema:
     "glyphPreset": "nerd",
     "fallbackGlyphPreset": "unicode",
     "icons": { "brand": "π" }
+  },
+  "explorer": {
+    "layout": "split",
+    "splitWidth": "34%",
+    "overlayWidth": "52%",
+    "minOverlayColumns": 100
   }
 }
 ```
@@ -48,7 +54,9 @@ The packaged schema is [`schemas/codeui.settings.schema.json`](./schemas/codeui.
 - density: `compact`, `comfortable`;
 - borders: `rounded`, `square`, `minimal`;
 - glyphs: `nerd`, `unicode`, `ascii`, `custom`;
-- icon overrides: `brand`, `branch`, `modified`, `added`, `untracked`.
+- icon overrides: `brand`, `branch`, `modified`, `added`, `untracked`;
+- Explorer layout: `split` (default) or `overlay`;
+- split width: 20–50% via `explorer.splitWidth`.
 
 `custom` starts from `fallbackGlyphPreset` and applies icon overrides. Overrides also work with the other profiles. `/codeui-doctor` reports active paths, trust, glyph samples, and terminal identity.
 
@@ -95,19 +103,24 @@ npm run dev
 
 Inside Pi:
 
-- `/codeui` or `Ctrl+Shift+G` opens Git Explorer.
+- In fullscreen mode, Git Explorer remains mounted as a true right-side split and Pi's transcript/editor reflows on the left.
+- `/codeui` or `Ctrl+Shift+G` focuses the split panel, or opens the fallback Explorer.
 - `/codeui-refresh` refreshes repository state.
 - `/codeui-vim` toggles embedded Vim mode for the current session.
 - `/codeui-doctor` reports active customization and editor settings.
 - `/reload` reloads the extension and Pi resources.
 
-Git Explorer controls: `j`/`k` or arrows select files and scroll the focused diff; `Tab` switches Working/Staged; `Enter` toggles list/diff focus; `PageUp`/`PageDown` or `Ctrl+U`/`Ctrl+D` scroll the diff; `e` opens the selected file in Neovim; `r` refreshes; `q`/`Escape` closes. Wide terminals show a right-side overlay. Below `explorer.minOverlayColumns`, Pi uses a regular full dashboard so narrow terminals remain usable.
+Git Explorer controls: `j`/`k` or arrows select files and scroll the focused diff; `Tab` switches Working/Staged; `Enter` toggles list/diff focus; `PageUp`/`PageDown` or `Ctrl+U`/`Ctrl+D` scroll the diff; `e` opens the selected file in Neovim; `r` refreshes; `q`/`Escape` returns focus to Pi's editor while the split stays visible. Regular TUI mode, narrow terminals, and `explorer.layout: "overlay"` use the existing overlay/dashboard fallback.
 
 The current UI follows [the terminal mockup](./docs/mockups/pi-codeui-terminal.png).
 
 ## Scope
 
 The changes widget and Git Explorer remain read-only. Staging, unstaging, patch selection, discarding, and replacement of Pi's transcript/header/footer remain deferred. Embedded Vim mode intentionally implements only the documented core motions; it is not a Vim emulator.
+
+### Split-layout compatibility
+
+Pi's public extension API currently exposes overlays but not side panels. To deliver a reflowing split without maintaining a separate Pi fork, `@pi-codeui/core` 0.1.x wraps Pi 0.84's fullscreen `layoutRoot` with pi-tui's `HStack` and restores it on reload/shutdown. This adapter is intentionally bounded to the package's Pi 0.84 peer range. If the internal root is unavailable, pi-codeui fails closed to the overlay/dashboard instead of replacing an unknown layout. A future upstream `setSidePanel` API should replace this adapter.
 
 ## License
 
