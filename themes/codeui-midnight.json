@@ -14,13 +14,14 @@
     "purple": "#b997ff",
     "text": "#dce7f3",
     "muted": "#7f8da2",
-    "dim": "#536075"
+    "dim": "#536075",
+    "line": "#253042"
   },
   "colors": {
     "accent": "cyan",
-    "border": "blue",
+    "border": "line",
     "borderAccent": "cyan",
-    "borderMuted": "dim",
+    "borderMuted": "line",
     "success": "green",
     "error": "red",
     "warning": "yellow",

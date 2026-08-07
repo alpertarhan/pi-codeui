@@ -181,7 +181,9 @@ export class GitExplorer implements Focusable {
       content.push(...this.renderDiff(inner, diffHeight));
     }
     if (gap) content.push("");
-    content.push(this.theme.fg("dim", "j/k move · Tab scope · Enter focus · PgUp/PgDn diff · e nvim · r refresh · q editor"));
+    const fullHints = "j/k move  Tab scope  Enter focus  e nvim  r refresh  q editor";
+    const compactHints = "j/k move  Tab scope  e nvim  r refresh  q";
+    content.push(this.theme.fg("dim", visibleWidth(fullHints) <= inner ? fullHints : compactHints));
 
     const framed = content.map((line) => this.theme.fg("border", border.vertical) + fit(line, inner) + this.theme.fg("border", border.vertical));
     const horizontal = (left: string, right: string) => this.theme.fg("border", truncateToWidth(`${left}${border.horizontal.repeat(Math.max(0, width - visibleWidth(left) - visibleWidth(right)))}${right}`, width, ""));

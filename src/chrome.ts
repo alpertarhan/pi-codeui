@@ -52,7 +52,9 @@ export function renderChromeHeader(
 ): string[] {
   if (!settings.chrome.header || width <= 0) return [];
   const { icons } = resolveGlyphs(settings);
-  const left = `${theme.fg("accent", `${icons.brand} pi-codeui`)}${theme.fg("dim", `  ${basename(context.cwd)}`)}`;
+  const workspace = basename(context.cwd);
+  const workspaceLabel = workspace === "pi-codeui" ? "" : `  ·  ${workspace}`;
+  const left = `${theme.fg("accent", `${icons.brand} pi-codeui`)}${theme.fg("dim", workspaceLabel)}`;
   const center = theme.fg("muted", `${icons.branch} ${branchName(state)}`);
   const right = `${theme.fg(context.agentRunning ? "warning" : "success", context.agentRunning ? "● working" : "● ready")}${theme.fg("dim", `  ${context.model ?? "no-model"}`)}`;
   return [columns(left, center, right, width), theme.fg("border", "─".repeat(width))];
@@ -74,7 +76,7 @@ export function renderChromeFooter(
   } else if (state.kind === "error") git = "git error";
   const left = theme.fg("dim", projectPath(context.cwd));
   const center = theme.fg(ready?.kind === "repo" && ready.status.files.length === 0 ? "success" : "muted", git);
-  const right = theme.fg("dim", `${context.model ?? "no-model"}${context.thinking ? `  ·  ${context.thinking}` : ""}`);
+  const right = `${theme.fg("accent", context.model ?? "no-model")}${context.thinking ? theme.fg("dim", `  ·  ${context.thinking}`) : ""}`;
   return [theme.fg("border", "─".repeat(width)), columns(left, center, right, width)];
 }
 

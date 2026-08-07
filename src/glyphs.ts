@@ -2,7 +2,7 @@ import { stripTerminalSequences, truncateToWidth, visibleWidth } from "@earendil
 import type { CodeuiSettings, FallbackGlyphPreset, IconKey } from "./settings.ts";
 
 export const GLYPH_PRESETS: Record<FallbackGlyphPreset, Record<IconKey, string>> = {
-  nerd: { brand: "󰚩", branch: "", modified: "󰏫", added: "󰐕", untracked: "󰋗" },
+  nerd: { brand: "π", branch: "", modified: "󰏫", added: "󰐕", untracked: "󰋗" },
   unicode: { brand: "π", branch: "⑂", modified: "●", added: "+", untracked: "?" },
   ascii: { brand: "pi", branch: "git", modified: "M", added: "A", untracked: "?" },
 };

@@ -16,6 +16,7 @@ export interface VimEditorOptions {
   modal?: boolean;
   label?: string;
   styleMode?: (mode: VimMode, label: string) => string;
+  styleBorder?: (mode: VimMode, text: string) => string;
   onModeChange?: (mode: VimMode) => void;
 }
 
@@ -44,6 +45,7 @@ export class VimEditor extends CustomEditor {
     super(tui, theme, keybindings);
     this.vimOptions = vimOptions;
     this.mode = vimOptions.startMode;
+    if (vimOptions.styleBorder) this.borderColor = (text) => vimOptions.styleBorder!(this.mode, text);
   }
 
   getMode(): VimMode {
