@@ -43,6 +43,33 @@ test("Pi extension widgets are extracted from the transcript dock", () => {
   assert.match(extracted.widgets.flatMap((widget) => widget.render(80)).join("\n"), /TODO WIDGET/);
 });
 
+test("split restores responsive panel width and publishes resize state", () => {
+  const term = terminal(160, 40);
+  const tui = new TuiAltScreen(term);
+  const editor = focusable();
+  tui.setLayoutRoot(new VStack([editor, component()]));
+  tui.setFocus(editor);
+  const patches: unknown[] = [];
+  const controller = new SplitPanelController(tui, {
+    git: new GitStateController(async () => ({ stdout: "", stderr: "", code: 1, killed: false }), "/repo", 0),
+    exec: async () => ({ stdout: "", stderr: "", code: 1, killed: false }),
+    getSettings: () => DEFAULT_SETTINGS,
+    theme: theme as any,
+    workspaceState: { panelWidthPercent: 44 },
+    onWorkspaceStateChange: (patch) => patches.push(patch),
+    onAction: () => {},
+  });
+  assert.equal(controller.ensure(), true);
+  assert.match(controller.diagnostic, /panel 70 cols/);
+  controller.focus();
+  (tui as any).handleTerminalInput("]");
+  assert.match(controller.diagnostic, /panel 74 cols/);
+  assert.deepEqual(patches.at(-1), { panelWidthPercent: 46 });
+  (tui as any).handleTerminalInput("0");
+  assert.deepEqual(patches.at(-1), { panelWidthPercent: undefined });
+  controller.dispose();
+});
+
 test("fullscreen split wraps and restores Pi's existing layout root", () => {
   const tui = new TuiAltScreen(terminal(), false, "/tmp");
   const originalRoot = component();

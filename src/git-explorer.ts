@@ -9,6 +9,7 @@ import { fuzzySearch, type RankedSearchDocument, type SearchDocument } from "./s
 import { resolveGlyphs } from "./glyphs.ts";
 import { BORDER_PRESETS, DENSITY_PRESETS, type CodeuiSettings } from "./settings.ts";
 import { sanitizeTerminalLine } from "./terminal.ts";
+import type { WorkspaceUiState } from "./workspace-state.ts";
 
 export type ExplorerScope = "working" | "staged";
 type ExplorerView = "changes" | "activity" | "checks";
@@ -27,6 +28,8 @@ export interface GitExplorerOptions {
   input?: (title: string, placeholder?: string) => Promise<string | undefined>;
   select?: (title: string, options: string[]) => Promise<string | undefined>;
   notify?: (message: string, level: "info" | "warning" | "error") => void;
+  workspaceState?: Readonly<WorkspaceUiState>;
+  onWorkspaceStateChange?: (patch: Partial<WorkspaceUiState>) => void;
   reservedRows?: number;
   getTerminalRows?: () => number;
   getResizeStatus?: () => string | undefined;
@@ -138,6 +141,7 @@ export class GitExplorer implements Focusable {
   private readonly input: (title: string, placeholder?: string) => Promise<string | undefined>;
   private readonly selectMenu: (title: string, options: string[]) => Promise<string | undefined>;
   private readonly notify: (message: string, level: "info" | "warning" | "error") => void;
+  private readonly onWorkspaceStateChange: (patch: Partial<WorkspaceUiState>) => void;
   private readonly activity: ActivityTracker | undefined;
   private readonly unsubscribe: () => void;
   private readonly unsubscribeActivity: (() => void) | undefined;
@@ -172,7 +176,12 @@ export class GitExplorer implements Focusable {
     this.input = options.input ?? (async () => undefined);
     this.selectMenu = options.select ?? (async () => undefined);
     this.notify = options.notify ?? (() => {});
+    this.onWorkspaceStateChange = options.onWorkspaceStateChange ?? (() => {});
     this.activity = options.activity;
+    this.view = options.workspaceState?.view ?? this.view;
+    this.scope = options.workspaceState?.scope ?? this.scope;
+    this.widgetDockCollapsed = options.workspaceState?.widgetDock === "collapsed";
+    this.widgetDockExpanded = options.workspaceState?.widgetDock === "expanded";
     this.unsubscribe = git.onChange(() => this.syncFiles());
     this.unsubscribeActivity = this.activity?.onChange(() => {
       this.activitySelected = Math.min(this.activitySelected, Math.max(0, (this.activity?.records.length ?? 1) - 1));
@@ -204,18 +213,21 @@ export class GitExplorer implements Focusable {
     if (data === "a") {
       this.view = "activity";
       this.focus = "list";
+      this.persistWorkspaceState();
       this.requestRender();
       return;
     }
     if (data === "g") {
       this.view = "changes";
       this.focus = "list";
+      this.persistWorkspaceState();
       this.requestRender();
       return;
     }
     if (data === "c") {
       this.view = "checks";
       this.focus = "list";
+      this.persistWorkspaceState();
       this.requestRender();
       return;
     }
@@ -250,6 +262,7 @@ export class GitExplorer implements Focusable {
     }
     if (this.view === "changes" && matchesKey(data, Key.tab)) {
       this.scope = this.scope === "working" ? "staged" : "working";
+      this.persistWorkspaceState();
       this.selected = 0;
       this.listStart = 0;
       this.syncFiles();
@@ -404,6 +417,7 @@ export class GitExplorer implements Focusable {
       this.selectCheck(Math.max(0, index));
     }
     this.focus = "list";
+    this.persistWorkspaceState();
     this.requestRender();
   }
 
@@ -446,6 +460,7 @@ export class GitExplorer implements Focusable {
       else if (localX >= inner - 16) this.view = "activity";
       else if (localX >= inner - 25) this.view = "changes";
       this.focus = "list";
+      this.persistWorkspaceState();
       this.requestRender();
       return true;
     }
@@ -499,6 +514,7 @@ export class GitExplorer implements Focusable {
     if (listRow === 0) {
       if (this.view === "changes") {
         this.scope = localX < 13 ? "working" : "staged";
+        this.persistWorkspaceState();
         this.selected = 0;
         this.listStart = 0;
         this.syncFiles();
@@ -857,6 +873,11 @@ export class GitExplorer implements Focusable {
     return [horizontal(border.topLeft, border.topRight), ...framed, horizontal(border.bottomLeft, border.bottomRight)];
   }
 
+  private persistWorkspaceState(): void {
+    const widgetDock = this.widgetDockCollapsed ? "collapsed" : this.widgetDockExpanded ? "expanded" : "auto";
+    this.onWorkspaceStateChange({ view: this.view, scope: this.scope, widgetDock });
+  }
+
   private toggleWidgetDock(): void {
     if (this.widgetDockEffectiveCollapsed) {
       this.widgetDockCollapsed = false;
@@ -865,6 +886,7 @@ export class GitExplorer implements Focusable {
       this.widgetDockCollapsed = true;
       this.widgetDockExpanded = false;
     }
+    this.persistWorkspaceState();
     this.requestRender();
   }
 

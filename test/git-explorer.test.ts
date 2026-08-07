@@ -103,6 +103,32 @@ test("right-click target opens the selected file action menu", async () => {
   explorer.dispose();
 });
 
+test("Explorer restores and publishes repo workspace UI state", async () => {
+  const patches: unknown[] = [];
+  const widget = { render: () => ["● Todos (0/1)", "└─ ○ Persist rail"], invalidate: () => {} };
+  const explorer = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, {
+    embedded: true,
+    getTerminalRows: () => 24,
+    getDockedWidgets: () => [widget],
+    workspaceState: { view: "checks", scope: "staged", widgetDock: "collapsed" },
+    onWorkspaceStateChange: (patch) => patches.push(patch),
+  });
+  await settle();
+  const restored = stripTerminalSequences(explorer.render(70).join("\n"));
+  assert.equal(explorer.scope, "staged");
+  assert.match(restored, /CHECKS/);
+  assert.match(restored, /w expand/);
+  explorer.handleInput("g");
+  explorer.handleInput("\t");
+  explorer.handleInput("w");
+  assert.deepEqual(patches, [
+    { view: "changes", scope: "staged", widgetDock: "collapsed" },
+    { view: "changes", scope: "working", widgetDock: "collapsed" },
+    { view: "changes", scope: "working", widgetDock: "expanded" },
+  ]);
+  explorer.dispose();
+});
+
 test("docked extension widgets render and collapse inside the rail", async () => {
   const widget = { render: () => ["", "● Todos (0/2)", "├─ ◐ Implement dock", "└─ ○ Verify", ""], invalidate: () => {} };
   const explorer = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, {

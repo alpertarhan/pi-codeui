@@ -13,6 +13,7 @@ import { DEFAULT_SETTINGS } from "./settings.ts";
 import { SplitPanelController } from "./split-panel.ts";
 import { sanitizeTerminalLine } from "./terminal.ts";
 import { VimEditor } from "./vim-editor.ts";
+import { WorkspaceStateStore } from "./workspace-state.ts";
 
 export { detectRoot, getDiff, getLineStats, getRepoState, GitCancelledError, GitError, previewUntracked } from "./git/git.ts";
 export { parseBranch, parseNumstat, parseStatus, PorcelainError } from "./git/porcelain.ts";
@@ -27,6 +28,8 @@ interface Runtime {
   settings: SettingsController;
   git: GitStateController;
   activity: ActivityTracker;
+  workspaceStore: WorkspaceStateStore;
+  workspaceRoot: string;
   ctx: ExtensionContext;
   unsubscribe: () => void;
   explorer?: GitExplorer;
@@ -72,6 +75,7 @@ export default function codeui(pi: ExtensionAPI): void {
     active?.unsubscribe();
     active?.activity.dispose();
     active?.git.dispose();
+    active?.workspaceStore.dispose();
     runtime = undefined;
     settings?.dispose();
     settings = undefined;
@@ -140,6 +144,7 @@ export default function codeui(pi: ExtensionAPI): void {
     ctx.ui.setWidget(CHANGES_KEY, (tui, theme) => {
       active.requestRender = () => tui.requestRender();
       active.split?.dispose();
+      const workspaceState = active.workspaceStore.get(active.workspaceRoot);
       active.split = new SplitPanelController(tui, {
         git,
         activity: active.activity,
@@ -152,6 +157,8 @@ export default function codeui(pi: ExtensionAPI): void {
         input: (title, placeholder) => ctx.ui.input(title, placeholder),
         select: (title, options) => ctx.ui.select(title, options),
         notify: (message, level) => ctx.ui.notify(message, level),
+        workspaceState,
+        onWorkspaceStateChange: (patch) => active.workspaceStore.update(active.workspaceRoot, patch),
         onAction: (result) => void handleExplorerAction(active, result),
       });
       active.split.ensure();
@@ -208,6 +215,8 @@ export default function codeui(pi: ExtensionAPI): void {
           input: (title, placeholder) => ctx.ui.input(title, placeholder),
           select: (title, options) => ctx.ui.select(title, options),
           notify: (message, level) => ctx.ui.notify(message, level),
+          workspaceState: active.workspaceStore.get(active.workspaceRoot),
+          onWorkspaceStateChange: (patch) => active.workspaceStore.update(active.workspaceRoot, patch),
         });
         active.explorer = explorer;
         return explorer;
@@ -237,13 +246,16 @@ export default function codeui(pi: ExtensionAPI): void {
 
     const git = new GitStateController(pi.exec.bind(pi), ctx.cwd);
     const activity = new ActivityTracker(ctx.cwd);
+    const workspaceStore = new WorkspaceStateStore();
     const unsubscribe = git.onChange(() => {
       if (!runtime) return;
       const state = git.state;
       ctx.ui.setStatus(GIT_KEY, state.kind === "error" ? ctx.ui.theme.fg("error", "git error") : undefined);
     });
-    runtime = { settings, git, activity, ctx, unsubscribe, agentRunning: false };
+    runtime = { settings, git, activity, workspaceStore, workspaceRoot: ctx.cwd, ctx, unsubscribe, agentRunning: false };
     await git.refresh();
+    if (runtime) runtime.workspaceRoot = git.state.kind === "repo" ? git.state.root : ctx.cwd;
+    if (workspaceStore.warning) ctx.ui.notify(`pi-codeui workspace state: ${sanitizeTerminalLine(workspaceStore.warning)}`, "warning");
     installWidget();
   });
 
@@ -278,6 +290,20 @@ export default function codeui(pi: ExtensionAPI): void {
     description: "Open the read-only Git Explorer",
     handler: openExplorer,
   });
+  pi.registerCommand("codeui-reset-workspace", {
+    description: "Reset saved pi-codeui layout state for this repository",
+    handler: async (_args, ctx) => {
+      if (!runtime) {
+        if (ctx.hasUI) ctx.ui.notify("pi-codeui workspace state is only active in the interactive TUI.", "warning");
+        return;
+      }
+      runtime.workspaceStore.clear(runtime.workspaceRoot);
+      runtime.workspaceStore.flushSync();
+      installWidget();
+      ctx.ui.notify("Reset saved CodeUI width, tab, scope, and widget dock state for this repository.", "info");
+    },
+  });
+
   pi.registerCommand("codeui-refresh", {
     description: "Refresh pi-codeui Git state",
     handler: async (_args, ctx) => {

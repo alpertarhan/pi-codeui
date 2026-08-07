@@ -14,6 +14,7 @@ import type { GitExec } from "./git/git.ts";
 import { GitExplorer, type GitExplorerResult } from "./git-explorer.ts";
 import type { GitStateController } from "./git-state.ts";
 import type { CodeuiSettings } from "./settings.ts";
+import type { WorkspaceUiState } from "./workspace-state.ts";
 
 type InternalViewportTui = ViewportTUI & {
   layoutRoot?: Component;
@@ -55,6 +56,8 @@ export interface SplitPanelOptions {
   input?: (title: string, placeholder?: string) => Promise<string | undefined>;
   select?: (title: string, options: string[]) => Promise<string | undefined>;
   notify?: (message: string, level: "info" | "warning" | "error") => void;
+  workspaceState?: Readonly<WorkspaceUiState>;
+  onWorkspaceStateChange?: (patch: Partial<WorkspaceUiState>) => void;
   onAction: (result: Exclude<GitExplorerResult, undefined>) => void;
 }
 
@@ -75,7 +78,7 @@ export class SplitPanelController {
   private panel: GitExplorer | undefined;
   private previousFocus: Component | null = null;
   private panelColumns = 0;
-  private panelColumnsOverride: number | undefined;
+  private panelWidthPercentOverride: number | undefined;
   private resizing = false;
   private resizeNotice: string | undefined;
   private resizeNoticeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -86,6 +89,7 @@ export class SplitPanelController {
   constructor(tui: TUI, options: SplitPanelOptions) {
     this.tui = tui;
     this.options = options;
+    this.panelWidthPercentOverride = options.workspaceState?.panelWidthPercent;
   }
 
   get installed(): boolean {
@@ -238,13 +242,15 @@ export class SplitPanelController {
 
   private resizePanelTo(columns: number): void {
     const next = this.clampPanelColumns(columns);
-    this.panelColumnsOverride = next;
+    this.panelWidthPercentOverride = (next / Math.max(1, this.tui.terminal.columns)) * 100;
+    this.options.onWorkspaceStateChange?.({ panelWidthPercent: Math.round(this.panelWidthPercentOverride) });
     if (next !== this.panelColumns && this.originalRoot && this.panel) this.mount(this.originalRoot, this.panel, next);
     this.showResizeNotice(this.resizing ? "DRAG" : undefined, this.resizing);
   }
 
   private resetPanelColumns(): void {
-    this.panelColumnsOverride = undefined;
+    this.panelWidthPercentOverride = undefined;
+    this.options.onWorkspaceStateChange?.({ panelWidthPercent: undefined });
     const next = this.getPanelColumns();
     if (next !== this.panelColumns && this.originalRoot && this.panel) this.mount(this.originalRoot, this.panel, next);
     this.showResizeNotice("RESET");
@@ -287,6 +293,8 @@ export class SplitPanelController {
         input: this.options.input,
         select: this.options.select,
         notify: this.options.notify,
+        workspaceState: this.options.workspaceState,
+        onWorkspaceStateChange: this.options.onWorkspaceStateChange,
         activity: this.options.activity,
       },
     );
@@ -332,7 +340,7 @@ export class SplitPanelController {
   }
 
   private getPanelColumns(): number {
-    if (this.panelColumnsOverride !== undefined) return this.clampPanelColumns(this.panelColumnsOverride);
+    if (this.panelWidthPercentOverride !== undefined) return this.clampPanelColumns(this.tui.terminal.columns * (this.panelWidthPercentOverride / 100));
     const settings = this.options.getSettings().explorer;
     return this.clampPanelColumns(this.tui.terminal.columns * percentage(settings.splitWidth));
   }
