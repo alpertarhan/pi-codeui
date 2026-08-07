@@ -30,7 +30,7 @@ test("global chrome matches the mockup hierarchy and stays width-safe", async ()
     agentRunning: false,
     usage: {
       session: { input: 904_000, output: 107_000, cacheRead: 18_000_000, cacheWrite: 0, cached: 18_000_000, total: 19_011_000 },
-      turn: { input: 20_000, output: 2_000, cacheRead: 40_000, cacheWrite: 0, cached: 40_000, total: 62_000 },
+      turnNumber: 7,
       contextTokens: 144_000,
       contextWindow: 272_000,
       contextPercent: 53,
@@ -45,8 +45,8 @@ test("global chrome matches the mockup hierarchy and stays width-safe", async ()
   assert.match(header[0] ?? "", /feature\/ui/);
   assert.match(header[0] ?? "", /ready/);
   assert.match(footer[1] ?? "", /I904k/);
-  assert.match(footer[1] ?? "", /T22k/);
-  assert.doesNotMatch(footer[1] ?? "", /T62k/, "TURN must not count cache tokens that already appear under CACHE");
+  assert.match(footer[1] ?? "", /T#7/);
+  assert.doesNotMatch(footer[1] ?? "", /T22k|T62k/, "TURN must be an ordinal, not a token count");
   assert.match(footer[1] ?? "", /CTX 144k\/272k 53%/);
   assert.match(footer[1] ?? "", /gpt-5\.3-codex/);
   assert.ok([...header, ...footer].every((line) => visibleWidth(line) === 120));

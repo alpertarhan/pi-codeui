@@ -108,16 +108,16 @@ export function renderUsageMetrics(usage: UsageSnapshot, theme: Theme, compact: 
   const contextValue = `${usage.contextTokens === null ? "?" : formatTokens(usage.contextTokens)}/${formatTokens(usage.contextWindow)}${usage.contextPercent === null ? "" : ` ${usage.contextPercent.toFixed(0)}%`}`;
   const values = compact
     ? [
-        ["I", usage.session.input, "accent"], ["O", usage.session.output, "success"],
-        ["T", usage.turn.input + usage.turn.output, "thinkingHigh"], ["C", usage.session.cached, "warning"],
-        ["Σ", usage.session.total, "text"],
+        ["I", formatTokens(usage.session.input), "accent"], ["O", formatTokens(usage.session.output), "success"],
+        ["T#", String(usage.turnNumber), "thinkingHigh"], ["C", formatTokens(usage.session.cached), "warning"],
+        ["Σ", formatTokens(usage.session.total), "text"],
       ] as const
     : [
-        ["IN ", usage.session.input, "accent"], ["OUT ", usage.session.output, "success"],
-        ["TURN ", usage.turn.input + usage.turn.output, "thinkingHigh"], ["CACHE ", usage.session.cached, "warning"],
-        ["TOTAL ", usage.session.total, "text"],
+        ["IN ", formatTokens(usage.session.input), "accent"], ["OUT ", formatTokens(usage.session.output), "success"],
+        ["TURN #", String(usage.turnNumber), "thinkingHigh"], ["CACHE ", formatTokens(usage.session.cached), "warning"],
+        ["TOTAL ", formatTokens(usage.session.total), "text"],
       ] as const;
-  const metrics = values.map(([label, value, color]) => `${theme.fg("dim", label)}${theme.fg(color, formatTokens(value))}`);
+  const metrics = values.map(([label, value, color]) => `${theme.fg("dim", label)}${theme.fg(color, value)}`);
   metrics.push(`${theme.fg("dim", compact ? "CTX " : "CONTEXT ")}${theme.fg(contextColor, contextValue)}`);
   return metrics.join(theme.fg("dim", compact ? " " : "  ·  "));
 }

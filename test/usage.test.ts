@@ -12,7 +12,7 @@ const entry = (id: string, role: string, value?: ReturnType<typeof usage>) => ({
   message: { role, content: [], ...(value ? { usage: value } : {}) },
 });
 
-test("usage snapshot reports session, latest turn, cache, total, and context", () => {
+test("usage snapshot reports session totals, active turn ordinal, and context", () => {
   const entries = [
     entry("u1", "user"),
     entry("a1", "assistant", usage(100, 20, 30, 5)),
@@ -26,9 +26,7 @@ test("usage snapshot reports session, latest turn, cache, total, and context", (
   assert.deepEqual(snapshot.session, {
     input: 160, output: 32, cacheRead: 130, cacheWrite: 5, cached: 135, total: 327,
   });
-  assert.deepEqual(snapshot.turn, {
-    input: 50, output: 10, cacheRead: 100, cacheWrite: 0, cached: 100, total: 160,
-  });
+  assert.equal(snapshot.turnNumber, 2);
   assert.equal(snapshot.contextTokens, 144_000);
   assert.equal(snapshot.contextWindow, 272_000);
   assert.equal(snapshot.contextPercent, 52.94);

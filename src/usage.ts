@@ -16,7 +16,7 @@ export interface TokenTotals extends UsageLike {
 
 export interface UsageSnapshot {
   session: TokenTotals;
-  turn: TokenTotals;
+  turnNumber: number;
   contextTokens: number | null;
   contextWindow: number;
   contextPercent: number | null;
@@ -57,24 +57,13 @@ export function calculateUsageSnapshot(
     if (usage) add(session, usage);
   }
 
-  const branch = sessionManager.getBranch();
-  let turnStart = -1;
-  for (let index = branch.length - 1; index >= 0; index--) {
-    const entry = branch[index];
-    if (entry?.type === "message" && (entry.message as { role?: string }).role === "user") {
-      turnStart = index;
-      break;
-    }
-  }
-  const turn = empty();
-  for (const entry of branch.slice(turnStart + 1)) {
-    const usage = usageOf(entry);
-    if (usage) add(turn, usage);
-  }
+  const turnNumber = sessionManager.getBranch().filter((entry) =>
+    entry.type === "message" && (entry.message as { role?: string }).role === "user"
+  ).length;
 
   return {
     session: finish(session),
-    turn: finish(turn),
+    turnNumber,
     contextTokens: context?.tokens ?? null,
     contextWindow: context?.contextWindow ?? modelContextWindow,
     contextPercent: context?.percent ?? null,
