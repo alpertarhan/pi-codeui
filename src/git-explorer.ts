@@ -15,6 +15,7 @@ export interface GitExplorerOptions {
   embedded?: boolean;
   reservedRows?: number;
   getTerminalRows?: () => number;
+  getResizeStatus?: () => string | undefined;
   activity?: ActivityTracker;
 }
 type DiffState = { kind: "empty" } | { kind: "loading" } | { kind: "error"; message: string } | ({ kind: "ready" } & TextResult);
@@ -99,6 +100,7 @@ export class GitExplorer implements Focusable {
   private readonly embedded: boolean;
   private readonly reservedRows: number;
   private readonly getTerminalRows: () => number;
+  private readonly getResizeStatus: () => string | undefined;
   private readonly activity: ActivityTracker | undefined;
   private readonly unsubscribe: () => void;
   private readonly unsubscribeActivity: (() => void) | undefined;
@@ -127,6 +129,7 @@ export class GitExplorer implements Focusable {
     this.embedded = options.embedded ?? false;
     this.reservedRows = options.reservedRows ?? 0;
     this.getTerminalRows = options.getTerminalRows ?? (() => process.stdout.rows ?? 24);
+    this.getResizeStatus = options.getResizeStatus ?? (() => undefined);
     this.activity = options.activity;
     this.unsubscribe = git.onChange(() => this.syncFiles());
     this.unsubscribeActivity = this.activity?.onChange(() => {
@@ -290,7 +293,11 @@ export class GitExplorer implements Focusable {
     const { icons } = resolveGlyphs(settings);
     const title = this.theme.bold(this.theme.fg("accent", `${icons.brand}  GIT EXPLORER`));
     const tabs = `${this.view === "changes" ? this.theme.fg("accent", "CHANGES") : this.theme.fg("muted", "Changes")}  ${this.view === "activity" ? this.theme.fg("accent", "ACTIVITY") : this.theme.fg("muted", "Activity")}`;
-    content.push(`${title}${" ".repeat(Math.max(1, inner - visibleWidth(title) - visibleWidth(tabs)))}${tabs}`);
+    const resizeStatus = this.getResizeStatus();
+    const status = resizeStatus && inner >= 46 ? this.theme.fg("warning", `↔ ${resizeStatus}`) : "";
+    const trailing = status ? `${status}  ${tabs}` : tabs;
+    const compactTitle = truncateToWidth(title, Math.max(1, inner - visibleWidth(trailing) - 1), "…");
+    content.push(`${compactTitle}${" ".repeat(Math.max(1, inner - visibleWidth(compactTitle) - visibleWidth(trailing)))}${trailing}`);
     const now = this.renderNow(inner, maxRows >= 9 ? 2 : maxRows >= 7 ? 1 : 0);
     content.push(...now);
     if (gap) content.push("");
@@ -315,12 +322,15 @@ export class GitExplorer implements Focusable {
       content.push(...renderDetail(inner, detailHeight));
     }
     if (gap) content.push("");
-    const fullHints = this.view === "changes" ? "a activity  j/k move  Tab scope  ↗/double-click/e nvim  r refresh  q editor" : "g changes  j/k move  Enter detail  ↗/double-click/e nvim  q editor";
-    const compactHints = this.view === "changes" ? "a activity  j/k  Tab  ↗/dbl/e  r  q" : "g changes  j/k  Enter  ↗/dbl/e  q";
+    const fullHints = this.view === "changes" ? "a activity  j/k move  Tab scope  ↗/double-click/e nvim  [ ] resize  0 reset  q editor" : "g changes  j/k move  ↗/double-click/e nvim  [ ] resize  0 reset  q editor";
+    const compactHints = this.view === "changes" ? "a activity  j/k  ↗/dbl/e  [ ] size  0 reset  q" : "g changes  j/k  ↗/dbl/e  [ ] size  0 reset  q";
     content.push(this.theme.fg("dim", visibleWidth(fullHints) <= inner ? fullHints : compactHints));
 
     const borderToken = this.focused ? "borderAccent" : "border";
-    if (this.embedded) return content.map((line) => this.theme.fg(borderToken, border.vertical) + fit(line, inner));
+    if (this.embedded) {
+      const handleRow = Math.floor(content.length / 2);
+      return content.map((line, index) => this.theme.fg(index === handleRow ? "borderAccent" : borderToken, index === handleRow ? "⋮" : border.vertical) + fit(line, inner));
+    }
     const framed = content.map((line) => this.theme.fg(borderToken, border.vertical) + fit(line, inner) + this.theme.fg(borderToken, border.vertical));
     const horizontal = (left: string, right: string) => this.theme.fg(borderToken, truncateToWidth(`${left}${border.horizontal.repeat(Math.max(0, width - visibleWidth(left) - visibleWidth(right)))}${right}`, width, ""));
     return [horizontal(border.topLeft, border.topRight), ...framed, horizontal(border.bottomLeft, border.bottomRight)];

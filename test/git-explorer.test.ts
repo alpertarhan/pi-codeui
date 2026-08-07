@@ -262,6 +262,7 @@ test("Explorer row count responds to terminal height", async () => {
     assert.equal(embeddedLines.length, 24);
     assert.match(stripTerminalSequences(embeddedLines[0] ?? ""), /GIT EXPLORER/);
     assert.doesNotMatch(stripTerminalSequences(embeddedLines[0] ?? ""), /[╭┌]/);
+    assert.ok(embeddedLines.some((line) => stripTerminalSequences(line).startsWith("⋮")), "integrated rail must expose a resize handle");
     embedded.dispose();
   } finally {
     Object.defineProperty(process.stdout, "rows", { configurable: true, value: original });

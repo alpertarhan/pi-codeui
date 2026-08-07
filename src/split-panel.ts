@@ -48,6 +48,11 @@ export class SplitPanelController {
   private panel: GitExplorer | undefined;
   private previousFocus: Component | null = null;
   private panelColumns = 0;
+  private panelColumnsOverride: number | undefined;
+  private resizing = false;
+  private resizeNotice: string | undefined;
+  private resizeNoticeTimer: ReturnType<typeof setTimeout> | undefined;
+  private lastDividerPress = 0;
   private unsubscribeMouse: (() => void) | undefined;
   private disposed = false;
 
@@ -63,7 +68,7 @@ export class SplitPanelController {
 
   get diagnostic(): string {
     const settings = this.options.getSettings().explorer;
-    if (this.installed) return `split active (${this.tui.terminal.columns} cols)`;
+    if (this.installed) return `split active (${this.tui.terminal.columns} cols) · panel ${this.panelColumns} cols`;
     if (settings.layout !== "split") return "overlay configured";
     if (this.tui.mode !== "fullscreen") return `split fallback (TUI mode: ${this.tui.mode})`;
     if (this.tui.terminal.columns < settings.minOverlayColumns) {
@@ -129,18 +134,52 @@ export class SplitPanelController {
     if (this.unsubscribeMouse || !isViewportTUI(this.tui)) return;
     const listener: TuiInputListener = (data) => {
       if (!this.installed || !this.panel) return undefined;
+      const internal = this.tui as InternalViewportTui;
+      if (internal.getFocusedComponent?.() === this.panel) {
+        if (data === "[") {
+          this.adjustPanelColumns(-4);
+          return { consume: true };
+        }
+        if (data === "]") {
+          this.adjustPanelColumns(4);
+          return { consume: true };
+        }
+        if (data === "0") {
+          this.resetPanelColumns();
+          return { consume: true };
+        }
+      }
       const match = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/.exec(data);
       if (!match) return undefined;
       const button = Number(match[1]);
       const x = Number(match[2]) - 1;
       const y = Number(match[3]) - 1;
+      const release = match[4] === "m";
+      const movement = (button & 32) !== 0;
+      if (this.resizing) {
+        if (release) {
+          this.resizing = false;
+          this.showResizeNotice();
+        } else if (movement) this.resizePanelTo(this.tui.terminal.columns - x);
+        return { consume: true };
+      }
       const panelStart = this.tui.terminal.columns - this.panelColumns;
       const headerRows = this.options.header ? 2 : 0;
       const footerRows = this.options.footer ? 2 : 0;
       const panelRows = this.tui.terminal.rows - headerRows - footerRows;
+      if (movement) return x >= panelStart ? { consume: true } : undefined;
       if (x < panelStart || y < headerRows || y >= headerRows + panelRows) return undefined;
-      if ((button & 32) !== 0) return { consume: true };
-      const release = match[4] === "m";
+      if (!release && (button & 64) === 0 && (button & 3) === 0 && x <= panelStart + 1) {
+        const now = Date.now();
+        this.focus();
+        if (now - this.lastDividerPress <= 350) this.resetPanelColumns();
+        else {
+          this.resizing = true;
+          this.showResizeNotice("DRAG", true);
+        }
+        this.lastDividerPress = now;
+        return { consume: true };
+      }
       if (!release) {
         this.focus();
         const localX = x - panelStart;
@@ -161,6 +200,43 @@ export class SplitPanelController {
     }
   }
 
+  private adjustPanelColumns(delta: number): void {
+    this.resizePanelTo(this.panelColumns + delta);
+  }
+
+  private resizePanelTo(columns: number): void {
+    const next = this.clampPanelColumns(columns);
+    this.panelColumnsOverride = next;
+    if (next !== this.panelColumns && this.originalRoot && this.panel) this.mount(this.originalRoot, this.panel, next);
+    this.showResizeNotice(this.resizing ? "DRAG" : undefined, this.resizing);
+  }
+
+  private resetPanelColumns(): void {
+    this.panelColumnsOverride = undefined;
+    const next = this.getPanelColumns();
+    if (next !== this.panelColumns && this.originalRoot && this.panel) this.mount(this.originalRoot, this.panel, next);
+    this.showResizeNotice("RESET");
+  }
+
+  private showResizeNotice(prefix?: string, hold = false): void {
+    if (this.resizeNoticeTimer) clearTimeout(this.resizeNoticeTimer);
+    const percent = Math.round((this.panelColumns / Math.max(1, this.tui.terminal.columns)) * 100);
+    this.resizeNotice = `${prefix ? `${prefix} · ` : ""}${percent}% · ${this.panelColumns} cols`;
+    this.tui.requestRender();
+    if (hold) return;
+    this.resizeNoticeTimer = setTimeout(() => {
+      this.resizeNotice = undefined;
+      this.resizeNoticeTimer = undefined;
+      this.tui.requestRender();
+    }, 1400);
+    this.resizeNoticeTimer.unref?.();
+  }
+
+  private clampPanelColumns(columns: number): number {
+    const max = Math.max(30, Math.min(96, this.tui.terminal.columns - 40));
+    return Math.max(30, Math.min(max, Math.round(columns)));
+  }
+
   private createPanel(): GitExplorer {
     return new GitExplorer(
       this.options.git,
@@ -173,6 +249,7 @@ export class SplitPanelController {
         embedded: true,
         reservedRows: (this.options.header ? 2 : 0) + (this.options.footer ? 2 : 0),
         getTerminalRows: () => this.tui.terminal.rows,
+        getResizeStatus: () => this.resizeNotice,
         activity: this.options.activity,
       },
     );
@@ -207,12 +284,16 @@ export class SplitPanelController {
   }
 
   private getPanelColumns(): number {
+    if (this.panelColumnsOverride !== undefined) return this.clampPanelColumns(this.panelColumnsOverride);
     const settings = this.options.getSettings().explorer;
-    const requested = Math.round(this.tui.terminal.columns * percentage(settings.splitWidth));
-    return Math.max(30, Math.min(72, requested));
+    return this.clampPanelColumns(this.tui.terminal.columns * percentage(settings.splitWidth));
   }
 
   private restore(): void {
+    if (this.resizeNoticeTimer) clearTimeout(this.resizeNoticeTimer);
+    this.resizeNoticeTimer = undefined;
+    this.resizeNotice = undefined;
+    this.resizing = false;
     this.unsubscribeMouse?.();
     this.unsubscribeMouse = undefined;
     this.panel?.dispose();
