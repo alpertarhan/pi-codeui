@@ -66,6 +66,24 @@ Pi owns native theme hot reload and renderers should use Pi Theme tokens such as
 
 The host terminal—not pi-codeui—owns font family, size, font features, and ligatures. See [`docs/terminal-profiles.md`](./docs/terminal-profiles.md) for user-managed Ghostty, Kitty, and WezTerm examples. Choose `unicode` or `ascii` when a Nerd Font is unavailable.
 
+## Vim and Neovim
+
+Embedded Vim mode is deliberately small and optional:
+
+```json
+{
+  "vim": {
+    "enabled": true,
+    "startMode": "insert",
+    "externalEditor": ["nvim"]
+  }
+}
+```
+
+Normal mode supports `h`/`j`/`k`/`l`, `w`/`b`, `0`/`$`, `x`, `i`, and `a`. The editor border shows `NORMAL` or `INSERT`; Pi control shortcuts continue to pass through. `/codeui-vim` toggles the mode for the current session without rewriting configuration.
+
+Pi's built-in `Ctrl+G` flow edits the current prompt using Pi's own `settings.json` `externalEditor` setting (for example, `"externalEditor": "nvim"`). Separately, Git Explorer's `e` key suspends Pi's TUI, opens the selected repository file with pi-codeui's `vim.externalEditor` argv array, resumes Pi, and refreshes Git state. The command is executed directly—never through a shell.
+
 ## Development
 
 ```sh
@@ -79,16 +97,17 @@ Inside Pi:
 
 - `/codeui` or `Ctrl+Shift+G` opens Git Explorer.
 - `/codeui-refresh` refreshes repository state.
-- `/codeui-doctor` reports active customization settings.
+- `/codeui-vim` toggles embedded Vim mode for the current session.
+- `/codeui-doctor` reports active customization and editor settings.
 - `/reload` reloads the extension and Pi resources.
 
-Git Explorer controls: `j`/`k` or arrows select files and scroll the focused diff; `Tab` switches Working/Staged; `Enter` toggles list/diff focus; `PageUp`/`PageDown` or `Ctrl+U`/`Ctrl+D` scroll the diff; `r` refreshes; `q`/`Escape` closes. Wide terminals show a right-side overlay. Below `explorer.minOverlayColumns`, Pi uses a regular full dashboard so narrow terminals remain usable.
+Git Explorer controls: `j`/`k` or arrows select files and scroll the focused diff; `Tab` switches Working/Staged; `Enter` toggles list/diff focus; `PageUp`/`PageDown` or `Ctrl+U`/`Ctrl+D` scroll the diff; `e` opens the selected file in Neovim; `r` refreshes; `q`/`Escape` closes. Wide terminals show a right-side overlay. Below `explorer.minOverlayColumns`, Pi uses a regular full dashboard so narrow terminals remain usable.
 
 The current UI follows [the terminal mockup](./docs/mockups/pi-codeui-terminal.png).
 
 ## Scope
 
-The changes widget and Git Explorer are read-only. Staging, unstaging, discarding, custom headers/footers/editors, Vim, and Neovim integration remain deferred.
+The changes widget and Git Explorer remain read-only. Staging, unstaging, patch selection, discarding, and replacement of Pi's transcript/header/footer remain deferred. Embedded Vim mode intentionally implements only the documented core motions; it is not a Vim emulator.
 
 ## License
 

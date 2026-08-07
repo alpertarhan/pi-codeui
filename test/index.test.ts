@@ -30,6 +30,8 @@ function context(mode: string, overrides: Record<string, unknown> = {}) {
   const statuses: Array<[string, string | undefined]> = [];
   const notifications: string[] = [];
   const customOptions: unknown[] = [];
+  const editorComponents: unknown[] = [];
+  let editorComponent: unknown;
   const theme = {
     fg: (_color: string, text: string) => text,
     bg: (_color: string, text: string) => text,
@@ -43,6 +45,8 @@ function context(mode: string, overrides: Record<string, unknown> = {}) {
       notify: (message: string) => notifications.push(message),
       setStatus: (key: string, value: string | undefined) => statuses.push([key, value]),
       setWidget: (key: string, value: unknown, options?: unknown) => widgets.push([key, value, options]),
+      getEditorComponent: () => editorComponent,
+      setEditorComponent: (value: unknown) => { editorComponent = value; editorComponents.push(value); },
       custom: async (factory: any, options?: unknown) => {
         customOptions.push(options);
         let finish!: () => void;
@@ -56,12 +60,12 @@ function context(mode: string, overrides: Record<string, unknown> = {}) {
     },
     ...overrides,
   };
-  return { ctx, widgets, statuses, notifications, customOptions };
+  return { ctx, widgets, statuses, notifications, customOptions, editorComponents };
 }
 
 test("commands and shortcut register; doctor is safe outside TUI", async () => {
   const ext = extension();
-  assert.deepEqual([...ext.commands.keys()], ["codeui", "codeui-refresh", "codeui-doctor"]);
+  assert.deepEqual([...ext.commands.keys()], ["codeui", "codeui-refresh", "codeui-vim", "codeui-doctor"]);
   assert.ok(ext.shortcuts.has("ctrl+shift+g"));
 
   const print = context("print");
@@ -95,6 +99,21 @@ test("lifecycle skips non-TUI resources, installs factory widget in TUI, and cle
   assert.ok(tui.widgets.some(([key, value]) => key === "pi-codeui.changes" && value === undefined));
   assert.ok(tui.statuses.some(([key, value]) => key === "pi-codeui.git" && value === undefined));
   assert.ok(tui.statuses.some(([key, value]) => key === "pi-codeui.settings" && value === undefined));
+});
+
+test("Vim mode toggles for the session and restores the previous editor", async () => {
+  const ext = extension();
+  const tui = context("tui");
+  await ext.handlers.get("session_start")?.({}, tui.ctx);
+
+  await ext.commands.get("codeui-vim").handler("", tui.ctx);
+  assert.equal(typeof tui.editorComponents.at(-1), "function");
+  assert.match(tui.notifications.at(-1) ?? "", /enabled/);
+
+  await ext.commands.get("codeui-vim").handler("", tui.ctx);
+  assert.equal(tui.editorComponents.at(-1), undefined);
+  assert.match(tui.notifications.at(-1) ?? "", /disabled/);
+  await ext.handlers.get("session_shutdown")?.({}, tui.ctx);
 });
 
 test("session shutdown dismisses an open Explorer and resolves its command", async () => {

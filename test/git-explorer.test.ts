@@ -43,6 +43,15 @@ test("Explorer scopes include the right staged, working, conflict, and untracked
   assert.deepEqual(filesForScope(files, "working", false).map((file) => file.path), ["both.ts", "working.ts", "conflict.ts"]);
 });
 
+test("Explorer returns a safe external-editor action for the selected file", async () => {
+  let result: unknown;
+  const explorer = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, (value) => { result = value; });
+  await settle();
+  explorer.handleInput("j");
+  explorer.handleInput("e");
+  assert.deepEqual(result, { action: "edit", root: "/repo", path: "working.ts" });
+});
+
 test("Explorer keys, diff colors/truncation, and renders stay width-safe", async () => {
   const colors: ThemeColor[] = [];
   const settings = cloneSettings(DEFAULT_SETTINGS);

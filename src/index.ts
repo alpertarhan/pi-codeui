@@ -2,12 +2,14 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Key } from "@earendil-works/pi-tui";
 import { createChangesWidget } from "./changes-widget.ts";
 import { getSettingsPaths } from "./config.ts";
-import { GitExplorer } from "./git-explorer.ts";
+import { openExternalEditor } from "./external-editor.ts";
+import { GitExplorer, type GitExplorerResult } from "./git-explorer.ts";
 import { GitStateController } from "./git-state.ts";
 import { resolveGlyphs } from "./glyphs.ts";
 import { SettingsController } from "./settings-controller.ts";
 import { DEFAULT_SETTINGS } from "./settings.ts";
 import { sanitizeTerminalLine } from "./terminal.ts";
+import { VimEditor } from "./vim-editor.ts";
 
 export { detectRoot, getDiff, getLineStats, getRepoState, GitCancelledError, GitError, previewUntracked } from "./git/git.ts";
 export { parseBranch, parseNumstat, parseStatus, PorcelainError } from "./git/porcelain.ts";
@@ -16,12 +18,17 @@ export type { BranchInfo, ChangeCounts, FileChange, LineStats, RepoState, RepoSt
 const CHANGES_KEY = "pi-codeui.changes";
 const GIT_KEY = "pi-codeui.git";
 
+type EditorFactory = ReturnType<ExtensionContext["ui"]["getEditorComponent"]>;
+
 interface Runtime {
   settings: SettingsController;
   git: GitStateController;
   ctx: ExtensionContext;
   unsubscribe: () => void;
   explorer?: GitExplorer;
+  previousEditor?: EditorFactory;
+  vimFactory?: NonNullable<EditorFactory>;
+  vimOverride?: boolean;
 }
 
 export default function codeui(pi: ExtensionAPI): void {
@@ -35,11 +42,21 @@ export default function codeui(pi: ExtensionAPI): void {
     ctx.ui.setStatus(SettingsController.statusKey, undefined);
   };
 
+  const restoreEditor = (active: Runtime): void => {
+    if (active.vimFactory && active.ctx.ui.getEditorComponent() === active.vimFactory) {
+      active.ctx.ui.setEditorComponent(active.previousEditor);
+    }
+    active.vimFactory = undefined;
+    active.previousEditor = undefined;
+  };
+
   const disposeRuntime = (ctx?: ExtensionContext): void => {
-    const previousCtx = runtime?.ctx;
-    runtime?.explorer?.dismiss();
-    runtime?.unsubscribe();
-    runtime?.git.dispose();
+    const active = runtime;
+    const previousCtx = active?.ctx;
+    active?.explorer?.dismiss();
+    if (active) restoreEditor(active);
+    active?.unsubscribe();
+    active?.git.dispose();
     runtime = undefined;
     settings?.dispose();
     settings = undefined;
@@ -47,14 +64,34 @@ export default function codeui(pi: ExtensionAPI): void {
     if (ctx && ctx !== previousCtx) clearUI(ctx);
   };
 
+  const syncVimEditor = (): void => {
+    if (!runtime) return;
+    const active = runtime;
+    const enabled = active.vimOverride ?? active.settings.current.vim.enabled;
+    if (!enabled) {
+      restoreEditor(active);
+      return;
+    }
+    if (active.vimFactory) return;
+
+    active.previousEditor = active.ctx.ui.getEditorComponent();
+    active.vimFactory = (tui, theme, keybindings) => new VimEditor(tui, theme, keybindings, {
+      startMode: active.settings.current.vim.startMode,
+      styleMode: (mode, label) => active.ctx.ui.theme.fg(mode === "insert" ? "success" : "accent", label),
+    });
+    active.ctx.ui.setEditorComponent(active.vimFactory);
+  };
+
   const installWidget = (): void => {
     if (!runtime) return;
-    const { ctx, git } = runtime;
-    const current = runtime.settings.current;
+    const active = runtime;
+    const { ctx, git } = active;
+    const current = active.settings.current;
     ctx.ui.setWidget(CHANGES_KEY, current.widget.enabled
       ? (tui, theme) => createChangesWidget(tui, theme, git, () => runtime?.settings.current ?? DEFAULT_SETTINGS)
       : undefined, { placement: current.widget.placement });
-    runtime.explorer?.settingsChanged();
+    active.explorer?.settingsChanged();
+    syncVimEditor();
   };
 
   const openExplorer = async (ctx: ExtensionContext): Promise<void> => {
@@ -75,9 +112,10 @@ export default function codeui(pi: ExtensionAPI): void {
     }
     const explorerSettings = active.settings.current.explorer;
     const wide = (process.stdout.columns ?? 0) >= explorerSettings.minOverlayColumns;
+    let result: GitExplorerResult;
     try {
-      await ctx.ui.custom<void>((tui, theme, _keybindings, done) => {
-        const explorer = new GitExplorer(active.git, pi.exec.bind(pi), () => active.settings.current, theme, () => tui.requestRender(), () => done());
+      result = await ctx.ui.custom<GitExplorerResult>((tui, theme, _keybindings, done) => {
+        const explorer = new GitExplorer(active.git, pi.exec.bind(pi), () => active.settings.current, theme, () => tui.requestRender(), done);
         active.explorer = explorer;
         return explorer;
       }, wide ? {
@@ -88,6 +126,14 @@ export default function codeui(pi: ExtensionAPI): void {
       active.explorer?.dispose();
       active.explorer = undefined;
     }
+
+    if (result?.action !== "edit" || runtime !== active) return;
+    const editor = active.settings.current.vim.externalEditor;
+    const editorResult = await openExternalEditor(ctx, editor, result.root, result.path);
+    if (runtime !== active) return;
+    if (editorResult.error) ctx.ui.notify(`External editor failed: ${sanitizeTerminalLine(editorResult.error)}`, "error");
+    else if (editorResult.status !== 0) ctx.ui.notify(`External editor exited with status ${editorResult.status ?? "unknown"}.`, "warning");
+    await active.git.refresh();
   };
 
   pi.on("session_start", async (_event, ctx) => {
@@ -141,6 +187,21 @@ export default function codeui(pi: ExtensionAPI): void {
     },
   });
 
+  pi.registerCommand("codeui-vim", {
+    description: "Toggle pi-codeui Vim mode for this session",
+    handler: async (_args, ctx) => {
+      if (ctx.mode !== "tui" || !runtime) {
+        if (ctx.hasUI) ctx.ui.notify("Vim mode is available in interactive TUI sessions.", "warning");
+        return;
+      }
+      const active = runtime;
+      const enabled = active.vimOverride ?? active.settings.current.vim.enabled;
+      active.vimOverride = !enabled;
+      syncVimEditor();
+      ctx.ui.notify(`Vim mode ${active.vimOverride ? "enabled" : "disabled"} for this session.`, "info");
+    },
+  });
+
   pi.registerCommand("codeui-doctor", {
     description: "Report pi-codeui settings, glyphs, and terminal appearance ownership",
     handler: async (_args, ctx) => {
@@ -155,6 +216,8 @@ export default function codeui(pi: ExtensionAPI): void {
         `Glyph preset: ${glyphs.preset}`,
         `Samples: ${glyphs.icons.brand} ${glyphs.icons.branch} ${glyphs.icons.modified} ${glyphs.icons.added} ${glyphs.icons.untracked}`,
         `Terminal: ${terminal}`,
+        `External editor: ${current.vim.externalEditor.join(" ")}`,
+        `Embedded Vim: ${(runtime?.vimOverride ?? current.vim.enabled) ? "enabled" : "disabled"}`,
         "Font family, size, features, and ligatures are managed by the host terminal.",
       ].join("\n"), "info");
     },

@@ -8,6 +8,7 @@ import { BORDER_PRESETS, DENSITY_PRESETS, type CodeuiSettings } from "./settings
 import { sanitizeTerminalLine } from "./terminal.ts";
 
 export type ExplorerScope = "working" | "staged";
+export type GitExplorerResult = { action: "edit"; root: string; path: string } | undefined;
 type DiffState = { kind: "empty" } | { kind: "loading" } | { kind: "error"; message: string } | ({ kind: "ready" } & TextResult);
 
 const fit = (text: string, width: number): string => {
@@ -39,7 +40,7 @@ export class GitExplorer implements Focusable {
   private readonly getSettings: () => Readonly<CodeuiSettings>;
   private readonly theme: Theme;
   private readonly requestRender: () => void;
-  private readonly close: () => void;
+  private readonly close: (result?: GitExplorerResult) => void;
 
   constructor(
     git: GitStateController,
@@ -47,7 +48,7 @@ export class GitExplorer implements Focusable {
     getSettings: () => Readonly<CodeuiSettings>,
     theme: Theme,
     requestRender: () => void,
-    close: () => void,
+    close: (result?: GitExplorerResult) => void,
   ) {
     this.git = git;
     this.exec = exec;
@@ -78,6 +79,12 @@ export class GitExplorer implements Focusable {
     }
     if (data === "r") {
       void this.git.refresh();
+      return;
+    }
+    if (data === "e") {
+      const file = this.files[this.selected];
+      const repo = this.repo();
+      if (file && repo) this.dismiss({ action: "edit", root: repo.root, path: file.path });
       return;
     }
     const down = data === "j" || matchesKey(data, Key.down);
@@ -121,7 +128,7 @@ export class GitExplorer implements Focusable {
       content.push(...this.renderDiff(inner, diffHeight));
     }
     if (gap) content.push("");
-    content.push(this.theme.fg("dim", "j/k select/scroll · Tab scope · Enter focus · PgUp/PgDn scroll · r refresh · q close"));
+    content.push(this.theme.fg("dim", "j/k select/scroll · Tab scope · Enter focus · PgUp/PgDn scroll · e nvim · r refresh · q close"));
 
     const framed = content.map((line) => this.theme.fg("border", border.vertical) + fit(line, inner) + this.theme.fg("border", border.vertical));
     const horizontal = (left: string, right: string) => this.theme.fg("border", truncateToWidth(`${left}${border.horizontal.repeat(Math.max(0, width - visibleWidth(left) - visibleWidth(right)))}${right}`, width, ""));
@@ -136,11 +143,11 @@ export class GitExplorer implements Focusable {
     this.syncFiles();
   }
 
-  dismiss(): void {
+  dismiss(result?: GitExplorerResult): void {
     if (this.dismissed) return;
     this.dismissed = true;
     this.dispose();
-    this.close();
+    this.close(result);
   }
 
   dispose(): void {
