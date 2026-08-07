@@ -201,8 +201,16 @@ export class SplitPanelController {
       const headerRows = this.options.header ? 2 : 0;
       const footerRows = this.options.footer ? 2 : 0;
       const panelRows = this.tui.terminal.rows - headerRows - footerRows;
+      const leftPress = !release && (button & 64) === 0 && (button & 3) === 0;
       if (movement) return x >= panelStart ? { consume: true } : undefined;
-      if (x < panelStart || y < headerRows || y >= headerRows + panelRows) return undefined;
+      if (x < panelStart) {
+        if (leftPress && internal.getFocusedComponent?.() === this.panel && y >= this.promptFocusStart(panelStart, headerRows, footerRows)) {
+          this.focusMain();
+          return { consume: true };
+        }
+        return undefined;
+      }
+      if (y < headerRows || y >= headerRows + panelRows) return undefined;
       if (!release && (button & 64) === 0 && (button & 3) === 0 && x <= panelStart + 1) {
         const now = Date.now();
         this.focus();
@@ -234,6 +242,24 @@ export class SplitPanelController {
       listeners.add(listener);
       for (const candidate of existing) listeners.add(candidate);
     }
+  }
+
+  private promptFocusStart(mainWidth: number, headerRows: number, footerRows: number): number {
+    let editorRows = 3;
+    try {
+      editorRows = Math.max(editorRows, this.previousFocus?.render(Math.max(1, mainWidth)).length ?? 0);
+    } catch {
+      // Focus fallback remains usable even if another extension editor cannot render off-cycle.
+    }
+    const bottom = this.tui.terminal.rows - footerRows;
+    return Math.max(headerRows, bottom - Math.min(Math.floor(this.tui.terminal.rows / 2), editorRows + 2));
+  }
+
+  private focusMain(): boolean {
+    if (!this.previousFocus) return false;
+    this.tui.setFocus(this.previousFocus);
+    this.tui.requestRender();
+    return true;
   }
 
   private adjustPanelColumns(delta: number): void {
@@ -285,6 +311,7 @@ export class SplitPanelController {
       (result) => this.deactivate(result),
       {
         embedded: true,
+        blur: () => { this.focusMain(); },
         reservedRows: (this.options.header ? 2 : 0) + (this.options.footer ? 2 : 0),
         getTerminalRows: () => this.tui.terminal.rows,
         getResizeStatus: () => this.resizeNotice,

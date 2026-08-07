@@ -112,6 +112,13 @@ test("fullscreen split wraps and restores Pi's existing layout root", () => {
   assert.ok(draggedTitleColumn < initialTitleColumn, "dragging the divider left must enlarge the sidebar");
   assert.match(((tui as any).layoutRoot as VStack).render(160).join("\n"), /70 cols/);
   assert.match(controller.diagnostic, /panel 70 cols/);
+  const focusedPanel = tui.getFocusedComponent();
+  (tui as any).handleTerminalInput("\x1b[<0;21;11M");
+  assert.equal(tui.getFocusedComponent(), focusedPanel, "transcript text clicks must preserve panel focus and selection behavior");
+  (tui as any).handleTerminalInput("\x1b[<0;21;26M");
+  assert.equal(tui.getFocusedComponent(), editor, "clicking the prompt region must restore editor focus");
+  (tui as any).handleTerminalInput("\x1b[<0;94;4M");
+  assert.notEqual(tui.getFocusedComponent(), editor);
   (tui.getFocusedComponent() as any).handleInput("q");
   assert.equal(tui.getFocusedComponent(), editor);
   assert.equal(controller.installed, true);

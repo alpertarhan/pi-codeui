@@ -24,6 +24,7 @@ export type GitExplorerResult =
   | undefined;
 export interface GitExplorerOptions {
   embedded?: boolean;
+  blur?: () => void;
   confirm?: (title: string, message: string) => Promise<boolean>;
   input?: (title: string, placeholder?: string) => Promise<string | undefined>;
   select?: (title: string, options: string[]) => Promise<string | undefined>;
@@ -136,6 +137,7 @@ export class GitExplorer implements Focusable {
   private dismissed = false;
   private lastDiffPage = 8;
   private readonly embedded: boolean;
+  private readonly blur: () => void;
   private readonly reservedRows: number;
   private readonly getTerminalRows: () => number;
   private readonly getResizeStatus: () => string | undefined;
@@ -171,6 +173,7 @@ export class GitExplorer implements Focusable {
     this.requestRender = requestRender;
     this.close = close;
     this.embedded = options.embedded ?? false;
+    this.blur = options.blur ?? (() => this.dismiss());
     this.reservedRows = options.reservedRows ?? 0;
     this.getTerminalRows = options.getTerminalRows ?? (() => process.stdout.rows ?? 24);
     this.getResizeStatus = options.getResizeStatus ?? (() => undefined);
@@ -210,7 +213,8 @@ export class GitExplorer implements Focusable {
       return;
     }
     if (data === "q" || matchesKey(data, Key.escape)) {
-      this.dismiss();
+      if (this.embedded) this.blur();
+      else this.dismiss();
       return;
     }
     if (data === "a") {
@@ -879,7 +883,7 @@ export class GitExplorer implements Focusable {
     this.widgetDockStartRow = widgetDock.length > 0 ? content.length : -1;
     content.push(...widgetDock);
     const gitAction = this.focus === "diff" ? `n/p Hunk · s ${this.scope === "working" ? "Stage" : "Unstage"} hunk` : this.scope === "working" ? "s Stage · x Discard" : "s Unstage";
-    const fullHints = this.searchActive ? "Type to filter · ↑/↓ Select · Enter Reveal · Ctrl+O Open · Esc Close" : this.view === "changes" ? `j/k Move · ${gitAction} · C Commit · Q Quickfix · e Open · / Search · q Back` : this.view === "activity" ? "g Changes · c Checks · j/k Move · Q Quickfix · e Open · / Search · q Back" : "g Changes · a Activity · j/k Move · Q Quickfix · e Open · / Search · q Back";
+    const fullHints = this.searchActive ? "Type to filter · ↑/↓ Select · Enter Reveal · Ctrl+O Open · Esc Close" : this.view === "changes" ? `j/k Move · ${gitAction} · C Commit · Q Quickfix · e Open · / Search · q/Click Back` : this.view === "activity" ? "g Changes · c Checks · j/k Move · Q Quickfix · e Open · / Search · q/Click Back" : "g Changes · a Activity · j/k Move · Q Quickfix · e Open · / Search · q/Click Back";
     const compactHints = this.searchActive ? "↑/↓ Select · Enter Reveal · ^O Open · Esc" : this.view === "changes" ? `${this.focus === "diff" ? "n/p Hunk · s Apply" : this.scope === "working" ? "s Stage" : "s Unstage"} · C Commit · Q QF · / Find · q` : this.view === "activity" ? "g Git · c Checks · Q QF · / Find · q" : "g Git · a Act · Q QF · / Find · q";
     content.push(this.theme.fg("dim", visibleWidth(fullHints) <= inner ? fullHints : compactHints));
 

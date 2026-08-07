@@ -6,6 +6,11 @@ All notable changes to `@pi-codeui/core` are documented here. The project follow
 
 - v1.0 compatibility and manual terminal-matrix validation.
 
+## 0.12.1
+
+- Restore Pi prompt focus when its left-side editor region is clicked while the fullscreen rail is focused.
+- Keep transcript clicks available for native terminal text selection and avoid rebuilding the rail on `q`/`Escape` blur.
+
 ## 0.12.0
 
 - Cache formatted diffs, parsed hunks, and unified search results by runtime revision.
