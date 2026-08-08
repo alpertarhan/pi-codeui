@@ -4,6 +4,11 @@ All notable changes to `pi-codeui` are documented here. The project follows sema
 
 ## Unreleased
 
+## 1.0.0-rc.3 - 2026-08-08
+
+- Remove the optional `isViewportTUI` runtime import that could crash when CodeUI and the host Pi resolved different pi-tui package trees.
+- Detect fullscreen split support structurally through `setLayoutRoot` while preserving layout-shape and identity fail-safes.
+
 ## 1.0.0-rc.2 - 2026-08-08
 
 - Hide Changes/diff controls outside Git repositories and reveal them automatically after `git init`.

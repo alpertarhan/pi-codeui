@@ -21,6 +21,12 @@ test("v1 package metadata exposes the canonical Pi package and gallery contract"
   }
 });
 
+test("split compatibility does not import optional pi-tui runtime guards", async () => {
+  const splitSource = await readFile(new URL("../src/split-panel.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(splitSource, /\bisViewportTUI\b/, "cross-install Pi runtimes may not export the optional helper");
+  assert.match(splitSource, /typeof .*setLayoutRoot.*=== "function"/, "viewport detection must use the capability CodeUI actually needs");
+});
+
 test("schema and install documentation use the canonical unscoped name", async () => {
   const schema = await json("../schemas/codeui.settings.schema.json");
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");

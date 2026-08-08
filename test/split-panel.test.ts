@@ -80,6 +80,28 @@ test("split restores responsive panel width and publishes resize state", () => {
   controller.dispose();
 });
 
+test("structural viewport support does not require the optional runtime type-guard export", () => {
+  const tui = new TuiAltScreen(terminal(), false, "/tmp");
+  Object.defineProperty(tui, Symbol.for("@earendil-works/pi-tui/viewport"), { value: false, configurable: true });
+  const originalRoot = component();
+  tui.setLayoutRoot(originalRoot);
+  const git = new GitStateController(async () => ({ stdout: "", stderr: "", code: 128, killed: false }), "/repo");
+  const controller = new SplitPanelController(tui, {
+    git,
+    exec: async () => ({ stdout: "", stderr: "", code: 0, killed: false }),
+    getSettings: () => DEFAULT_SETTINGS,
+    theme: theme as any,
+    onAction: () => {},
+  });
+
+  assert.equal(controller.ensure(), true);
+  assert.equal(controller.installed, true);
+  assert.match(controller.diagnostic, /split active/);
+  controller.dispose();
+  assert.equal((tui as any).layoutRoot, originalRoot);
+  git.dispose();
+});
+
 test("fullscreen split wraps and restores Pi's existing layout root", () => {
   const tui = new TuiAltScreen(terminal(), false, "/tmp");
   const originalRoot = component();

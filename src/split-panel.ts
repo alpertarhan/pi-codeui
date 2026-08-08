@@ -2,7 +2,6 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import {
   HStack,
   VStack,
-  isViewportTUI,
   type Component,
   type StackEntry,
   type TUI,
@@ -21,6 +20,9 @@ type InternalViewportTui = ViewportTUI & {
   getFocusedComponent?: () => Component | null;
   inputListeners?: Set<TuiInputListener>;
 };
+
+const supportsViewportLayout = (tui: TUI): tui is InternalViewportTui =>
+  typeof (tui as TUI & { setLayoutRoot?: unknown }).setLayoutRoot === "function";
 
 type DisposableComponent = Component & { dispose?(): void };
 type InternalStack = VStack & {
@@ -93,7 +95,7 @@ export class SplitPanelController {
   }
 
   get installed(): boolean {
-    if (!isViewportTUI(this.tui) || !this.splitRoot) return false;
+    if (!supportsViewportLayout(this.tui) || !this.splitRoot) return false;
     return (this.tui as InternalViewportTui).layoutRoot === this.splitRoot;
   }
 
@@ -105,7 +107,7 @@ export class SplitPanelController {
     if (this.tui.terminal.columns < settings.minOverlayColumns) {
       return `split fallback (${this.tui.terminal.columns} < ${settings.minOverlayColumns} cols)`;
     }
-    if (!isViewportTUI(this.tui)) return "split fallback (viewport API unavailable)";
+    if (!supportsViewportLayout(this.tui)) return "split fallback (viewport API unavailable)";
     return "split fallback (layout root unavailable)";
   }
 
@@ -115,7 +117,7 @@ export class SplitPanelController {
     const eligible = settings.layout === "split"
       && this.tui.mode === "fullscreen"
       && this.tui.terminal.columns >= settings.minOverlayColumns
-      && isViewportTUI(this.tui);
+      && supportsViewportLayout(this.tui);
     if (!eligible) {
       this.restore();
       return false;
@@ -172,7 +174,7 @@ export class SplitPanelController {
   }
 
   private installMouseListener(): void {
-    if (this.unsubscribeMouse || !isViewportTUI(this.tui)) return;
+    if (this.unsubscribeMouse || !supportsViewportLayout(this.tui)) return;
     const listener: TuiInputListener = (data) => {
       if (!this.installed || !this.panel) return undefined;
       const internal = this.tui as InternalViewportTui;
@@ -349,7 +351,7 @@ export class SplitPanelController {
     if (this.disposed) return;
     this.panel?.dispose();
     this.panel = this.createPanel();
-    if (this.originalRoot && isViewportTUI(this.tui)) {
+    if (this.originalRoot && supportsViewportLayout(this.tui)) {
       this.mount(this.originalRoot, this.panel, this.getPanelColumns());
     }
     this.tui.setFocus(this.previousFocus);
@@ -359,7 +361,7 @@ export class SplitPanelController {
   }
 
   private mount(originalRoot: Component, panel: GitExplorer, panelColumns: number): void {
-    if (!isViewportTUI(this.tui)) return;
+    if (!supportsViewportLayout(this.tui)) return;
     this.panelColumns = panelColumns;
     const content = new HStack([
       { component: this.mainRoot ?? originalRoot, basis: 0, grow: 1, shrink: 1, minSize: 40 },
@@ -388,7 +390,7 @@ export class SplitPanelController {
     this.unsubscribeMouse = undefined;
     this.panel?.dispose();
     this.panel = undefined;
-    if (this.originalRoot && this.splitRoot && isViewportTUI(this.tui)) {
+    if (this.originalRoot && this.splitRoot && supportsViewportLayout(this.tui)) {
       const internal = this.tui as InternalViewportTui;
       if (internal.layoutRoot === this.splitRoot) this.tui.setLayoutRoot(this.originalRoot);
     }

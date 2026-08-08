@@ -8,7 +8,7 @@ CodeUI is the only extension in this matrix that owns Pi's global header, footer
 
 With `explorer.dockWidgets: true`, CodeUI moves Pi's existing above/below-editor widget containers into the `EXTENSIONS` section. Docking is generic and preserves component instances; it does not fork, rewrite, or key-match third-party widgets. Set `explorer.dockWidgets: false` to keep Pi's native widget placement.
 
-The Pi 0.84 split adapter is fail-closed:
+The Pi 0.84 split adapter is fail-closed. It detects the viewport through the `setLayoutRoot` capability CodeUI actually uses rather than importing an optional pi-tui runtime type guard, so duplicate/cross-install dependency trees cannot crash on a missing helper export.
 
 - An unknown widget-dock shape remains untouched and is not extracted.
 - A missing/ineligible fullscreen root falls back to the regular overlay flow.
