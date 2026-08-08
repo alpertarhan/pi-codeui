@@ -1,6 +1,6 @@
 {
   "name": "pi-codeui",
-  "version": "1.0.0-rc.4",
+  "version": "1.0.0",
   "description": "Conversation-first, code-aware terminal workspace for Pi Coding Agent",
   "type": "module",
   "license": "MIT",
@@ -26,7 +26,11 @@
     "docs/RELEASING.md",
     "docs/mockups/pi-codeui-terminal.png",
     "README.md",
+    "PRODUCT_PLAN.md",
     "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "CODE_OF_CONDUCT.md",
+    "SECURITY.md",
     "LICENSE"
   ],
   "keywords": [

@@ -1,6 +1,6 @@
 # Pi extension compatibility
 
-This matrix records the configured extension set used for the CodeUI v1 release-candidate audit. It is evidence for the listed versions, not a promise about every future release of those packages.
+This matrix records the configured extension set used for the CodeUI v1.0.0 release audit. It is evidence for the listed versions, not a promise about every future release of those packages.
 
 ## Ownership contract
 

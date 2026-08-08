@@ -1,0 +1,77 @@
+name: Bug report
+description: Report a reproducible problem in pi-codeui
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Search existing issues first and remove secrets or private repository data.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened, and what did you expect instead?
+      placeholder: A concise description of the problem.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest reliable sequence that triggers the problem.
+      placeholder: |
+        1. Start Pi in ...
+        2. Run ...
+        3. Focus ...
+        4. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include pi-codeui, Pi, Node.js, OS, and terminal versions. `/codeui-doctor` output is useful when sanitized.
+      render: shell
+      placeholder: |
+        pi-codeui: 1.0.0
+        Pi: 0.84.x
+        Node: 22.19.0
+        OS: macOS / Linux / Windows
+        Terminal: Ghostty / Kitty / WezTerm / other
+        Git repository: yes / no
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or screenshots
+      description: Paste sanitized output or attach screenshots/recordings. Do not include tokens, secrets, or private code.
+
+  - type: dropdown
+    id: regression
+    attributes:
+      label: Regression?
+      options:
+        - Unknown
+        - Yes, this worked before
+        - No, this has never worked
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues for duplicates.
+          required: true
+        - label: I removed secrets and private data from this report.
+          required: true
+        - label: I agree to follow the Code of Conduct.
+          required: true

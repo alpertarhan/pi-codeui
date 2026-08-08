@@ -423,4 +423,4 @@ Manual TUI matrix:
 
 ## 11. v1 release posture
 
-Milestones M0–M10 are complete. v1 release candidates require the terminal/accessibility matrix, large-workspace profile, configured-extension audit, canonical package metadata, full test suite, package-content smoke check, Git install smoke test, and green GitHub Actions run. Advanced destructive Git operations remain post-v1 unless they can preserve the same fail-closed contract.
+Milestones M0–M10 are complete. The v1.0.0 release gate requires the terminal/accessibility matrix, large-workspace profile, configured-extension audit, canonical package metadata, full test suite, package-content smoke check, clean-install Pi load, and a green GitHub Actions run. Advanced destructive Git operations remain post-v1 unless they can preserve the same fail-closed contract.

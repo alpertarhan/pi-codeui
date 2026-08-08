@@ -1,0 +1,67 @@
+name: Feature request
+description: Propose an improvement to pi-codeui
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Start with the user problem. A proposed implementation is welcome but not required.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What workflow is difficult or impossible today, and who is affected?
+    validations:
+      required: true
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe the behavior or result you would like to see.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Primary surface
+      options:
+        - General conversation / Session
+        - Activity or tools
+        - Changes or Git
+        - Checks or diagnostics
+        - Search
+        - Chrome, prompt, or theme
+        - Extension compatibility
+        - Documentation or contributor experience
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Optional workarounds, related tools, or simpler approaches.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Mockups, screenshots, links, terminal constraints, or accessibility considerations.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues for similar requests.
+          required: true
+        - label: This request describes a concrete user problem rather than speculative flexibility.
+          required: true
+        - label: I agree to follow the Code of Conduct.
+          required: true

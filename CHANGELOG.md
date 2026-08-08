@@ -4,11 +4,14 @@ All notable changes to `pi-codeui` are documented here. The project follows sema
 
 ## Unreleased
 
+## 1.0.0 - 2026-08-08
+
 - Make the rail conversation-first with a session-local `Session` home, conversation/resource counts, and general-chat activity labels.
 - Replace duplicate empty list/detail placeholders with one contextual Session, Changes, Activity, or Checks body.
 - Search session messages with `m:` alongside files, activity, and diagnostics.
 - Show only currently available footer actions, add contextual `?` help, and separate agent `ACTIVE` from Git Worktree/Staged terminology.
 - Keep width, Git scope, and extension-dock preferences persistent while resetting the active tab to Session for each conversation.
+- Redesign the project README and add contributing, conduct, security, issue, and pull-request guidance for public collaboration.
 
 ## 1.0.0-rc.4 - 2026-08-08
 
