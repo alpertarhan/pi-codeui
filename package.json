@@ -1,6 +1,6 @@
 {
   "name": "pi-codeui",
-  "version": "1.0.0-rc.1",
+  "version": "1.0.0-rc.2",
   "description": "Git-aware developer workspace for Pi Coding Agent",
   "type": "module",
   "license": "MIT",

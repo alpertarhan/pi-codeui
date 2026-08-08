@@ -4,6 +4,12 @@ All notable changes to `pi-codeui` are documented here. The project follows sema
 
 ## Unreleased
 
+## 1.0.0-rc.2 - 2026-08-08
+
+- Hide Changes/diff controls outside Git repositories and reveal them automatically after `git init`.
+- Redesign Developer and Check Insight as readable vertical sections with textual status, timing, and scroll position.
+- Keep non-Git Activity/Checks/Search layouts and hints free of unavailable Git actions.
+
 ## 1.0.0-rc.1 - 2026-08-08
 
 - Add deterministic terminal, viewport, Nerd Font/Unicode/ASCII, and non-color accessibility matrices.

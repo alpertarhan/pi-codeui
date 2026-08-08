@@ -196,10 +196,6 @@ export default function codeui(pi: ExtensionAPI): void {
     }
     await active.git.refresh();
     if (runtime !== active) return;
-    if (active.git.state.kind === "none") {
-      ctx.ui.notify("CodeUI workspace: current directory is not a Git repository.", "info");
-      return;
-    }
     if (active.git.state.kind === "error") {
       ctx.ui.notify(`CodeUI workspace: ${sanitizeTerminalLine(active.git.state.message)}`, "error");
       return;

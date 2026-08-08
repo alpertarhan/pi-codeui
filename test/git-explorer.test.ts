@@ -82,6 +82,42 @@ test("embedded Explorer supports mouse tabs, scopes, and row selection", async (
   explorer.dispose();
 });
 
+test("non-repositories hide Git UI and reveal Changes after git init", async () => {
+  let initialized = false;
+  const exec: GitExec = async (_command, args) => {
+    if (args[0] === "rev-parse") return initialized
+      ? { stdout: "/repo\n", stderr: "", code: 0, killed: false }
+      : { stdout: "", stderr: "fatal: not a git repository", code: 128, killed: false };
+    if (args[0] === "status") return { stdout: "## main\0", stderr: "", code: 0, killed: false };
+    return { stdout: "", stderr: "", code: 0, killed: false };
+  };
+  const git = new GitStateController(exec, "/work", 5, 0);
+  await git.refresh();
+  const notices: string[] = [];
+  const explorer = new GitExplorer(git, exec, () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, {
+    embedded: true,
+    getTerminalRows: () => 40,
+    activity: new ActivityTracker("/work"),
+    notify: (message) => notices.push(message),
+  });
+
+  const local = stripTerminalSequences(explorer.render(60).join("\n"));
+  assert.match(local, /ACTIVITY\s+Checks/);
+  assert.doesNotMatch(local, /Changes|CHANGES|WORKING|STAGED|\bDIFF\b|No Git repository|Quickfix|e Open/);
+  explorer.handleInput("g");
+  assert.match(notices.at(-1) ?? "", /git init/);
+  assert.doesNotMatch(stripTerminalSequences(explorer.render(60).join("\n")), /Changes|CHANGES/);
+
+  initialized = true;
+  await git.refresh();
+  await settle();
+  const repository = stripTerminalSequences(explorer.render(60).join("\n"));
+  assert.match(repository, /CHANGES\s+Activity\s+Checks/);
+  assert.match(repository, /WORKSPACE OVERVIEW/);
+  explorer.dispose();
+  git.dispose();
+});
+
 test("stacked tabs keep list, insight, dock, and footer geometry stable", async () => {
   const explorer = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, {
     embedded: true,
@@ -156,7 +192,7 @@ test("workspace rail render matrix is width-safe and keeps tab geometry stable",
     const checks = stripTerminalSequences(explorer.render(100).join("\n"));
     assert.match(checks, /1 errors/);
     assert.match(checks, /✕/);
-    assert.match(checks, /SEVERITY\s+ERROR/, "check severity must remain textual without color");
+    assert.match(checks, /SEVERITY[\s\S]*?ERROR/, "check severity must remain textual without color");
     explorer.dispose();
     activity.dispose();
   }
@@ -404,10 +440,13 @@ test("Explorer shows NOW, newest-touched files, and WHAT/WHY/HOW activity insigh
   const insight = stripTerminalSequences(explorer.render(100).join("\n"));
   assert.match(insight, /ACTIVITY\s+2/);
   assert.match(insight, /DEVELOPER INSIGHT/);
-  assert.match(insight, /WHAT\s+Editing both\.ts/);
-  assert.match(insight, /WHY\s+Fixing validation/);
-  assert.match(insight, /HOW\s+1 replacement/);
-  assert.match(insight, /RESULT\s+Completed in 80ms/);
+  assert.match(insight, /WHAT[\s\S]*?Editing both\.ts/);
+  assert.match(insight, /WHY[\s\S]*?Fixing validation/);
+  assert.match(insight, /HOW[\s\S]*?1 replacement/);
+  assert.match(insight, /RESULT[\s\S]*?Completed in 80ms/);
+  const detail = insight.slice(insight.indexOf("DEVELOPER INSIGHT"));
+  assert.ok(detail.indexOf("WHAT") < detail.indexOf("WHY") && detail.indexOf("WHY") < detail.indexOf("HOW") && detail.indexOf("HOW") < detail.indexOf("RESULT"));
+  assert.match(detail, /✓ DONE/);
   explorer.dispose();
   activity.dispose();
 });
@@ -426,8 +465,10 @@ test("Checks view lists diagnostics and opens Neovim at the exact location", asy
   const checks = stripTerminalSequences(explorer.render(80).join("\n"));
   assert.match(checks, /CHECKS/);
   assert.match(checks, /PROBLEMS\s+1/);
+  assert.match(checks, /CHECK INSIGHT.*✕ ERROR/);
   assert.match(checks, /src\/app\.ts:12:5/);
   assert.match(checks, /Wrong type/);
+  assert.ok(checks.indexOf("LOCATION") < checks.indexOf("SEVERITY") && checks.indexOf("SEVERITY") < checks.indexOf("SOURCE") && checks.indexOf("SOURCE") < checks.indexOf("MESSAGE") && checks.indexOf("MESSAGE") < checks.indexOf("COMMAND"));
   explorer.handleInput("e");
   assert.deepEqual(result, { action: "edit", root: "/repo", path: "src/app.ts", line: 12, column: 5 });
   activity.dispose();

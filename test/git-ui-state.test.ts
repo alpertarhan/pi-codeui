@@ -43,6 +43,26 @@ test("Git state debounces bursts and publishes repo stats", async () => {
   controller.dispose();
 });
 
+test("non-repository polling discovers git init without an agent event", async () => {
+  let initialized = false;
+  let probes = 0;
+  const exec: GitExec = async (command, args, options) => {
+    if (args[0] === "rev-parse") {
+      probes++;
+      if (!initialized) return { stdout: "", stderr: "fatal: not a git repository", code: 128, killed: false };
+    }
+    return successfulExec(command, args, options);
+  };
+  const controller = new GitStateController(exec, "/work", 5, 10);
+  await controller.refresh();
+  assert.equal(controller.state.kind, "none");
+  initialized = true;
+  for (let attempt = 0; attempt < 20 && (controller.state as GitViewState).kind !== "repo"; attempt++) await delay(10);
+  assert.equal((controller.state as GitViewState).kind, "repo");
+  assert.ok(probes >= 2);
+  controller.dispose();
+});
+
 test("Git state aborts stale refreshes and dispose cancels work", async () => {
   let first = true;
   let aborts = 0;

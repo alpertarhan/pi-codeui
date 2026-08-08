@@ -19,11 +19,13 @@ export class GitStateController {
   private readonly exec: GitExec;
   private readonly cwd: string;
   private readonly debounceMs: number;
+  private readonly nonRepoPollMs: number;
 
-  constructor(exec: GitExec, cwd: string, debounceMs = 75) {
+  constructor(exec: GitExec, cwd: string, debounceMs = 75, nonRepoPollMs = 2_000) {
     this.exec = exec;
     this.cwd = cwd;
     this.debounceMs = debounceMs;
+    this.nonRepoPollMs = nonRepoPollMs;
   }
 
   onChange(listener: () => void): () => void {
@@ -35,6 +37,7 @@ export class GitStateController {
     if (this.disposed) return;
     clearTimeout(this.timer);
     this.timer = setTimeout(() => void this.refresh(), this.debounceMs);
+    this.timer.unref?.();
   }
 
   async refresh(): Promise<void> {
@@ -49,7 +52,14 @@ export class GitStateController {
     this.setState(previous ? { kind: "loading", previous } : { kind: "loading" });
     try {
       const repo = await getRepoState(this.exec, this.cwd, { signal: abort.signal });
-      if (repo.kind === "none") return this.finish(generation, abort, { kind: "none" });
+      if (repo.kind === "none") {
+        this.finish(generation, abort, { kind: "none" });
+        if (!this.disposed && generation === this.generation && this.state.kind === "none" && this.nonRepoPollMs > 0) {
+          this.timer = setTimeout(() => void this.refresh(), this.nonRepoPollMs);
+          this.timer.unref?.();
+        }
+        return;
+      }
       const [working, cached] = await Promise.all([
         getLineStats(this.exec, repo.root, "working", { signal: abort.signal }),
         getLineStats(this.exec, repo.root, "cached", { signal: abort.signal }),

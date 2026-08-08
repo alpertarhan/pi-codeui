@@ -72,6 +72,11 @@ test("global chrome matches the mockup hierarchy and stays width-safe", async ()
   const semanticFooter = renderChromeFooter(git.state, settings, semanticTheme, context, 240).join("\n");
   assert.match(semanticFooter, /\[muted\]~\/dev\/pi\/\[text\]pi-codeui/, "the active directory must be stronger than its parent path");
 
+  const localHeader = renderChromeHeader({ kind: "none" }, settings, theme, context, 120).join("\n");
+  assert.match(localHeader, /LOCAL/);
+  assert.match(localHeader, /git init enables Changes/);
+  assert.doesNotMatch(localHeader, /no git|git idle/, "non-repositories should not render fake Git state");
+
   settings.chrome.header = false;
   settings.chrome.footer = false;
   assert.deepEqual(renderChromeHeader(git.state, settings, theme, context, 80), []);

@@ -93,7 +93,12 @@ export function renderChromeHeader(
   const { icons } = resolveGlyphs(settings);
   const summary = gitSummary(state, settings);
   const left = `${theme.fg("dim", "PROJECT  ")}${theme.bold(theme.fg("accent", projectName(state, context.cwd)))}`;
-  const center = `${theme.fg("muted", `${icons.branch} ${branchName(state)}`)}${theme.fg("dim", "  ·  ")}${theme.fg(summary.tone, summary.text)}`;
+  const hasGit = readyState(state)?.kind === "repo";
+  const center = hasGit
+    ? `${theme.fg("muted", `${icons.branch} ${branchName(state)}`)}${theme.fg("dim", "  ·  ")}${theme.fg(summary.tone, summary.text)}`
+    : state.kind === "error"
+      ? `${theme.fg("muted", "LOCAL WORKSPACE")}${theme.fg("error", "  ·  git error")}`
+      : `${theme.fg("muted", "LOCAL")}${theme.fg("dim", "  ·  git init enables Changes")}`;
   const status = context.agentRunning ? "WORKING" : "READY";
   const right = theme.bold(theme.fg(context.agentRunning ? "warning" : "success", `●  ${status}`));
   return [columns(left, center, right, width), theme.fg("border", "─".repeat(width))];

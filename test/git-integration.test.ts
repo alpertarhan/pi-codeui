@@ -6,6 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 import type { ExecOptions, ExecResult } from "@earendil-works/pi-coding-agent";
 import { applyPatchHunk, commitStaged, detectRoot, discardTrackedFile, getDiff, getLineStats, getRepoState, GitCancelledError, GitError, parsePatchHunks, previewUntracked, stageFile, unstageFile, validateCommitMessage, type GitExec } from "../src/git/git.ts";
+import { GitStateController } from "../src/git-state.ts";
 
 const exec: GitExec = (command: string, args: string[], options: ExecOptions = {}) => new Promise((resolve, reject) => {
   const child = spawn(command, args, { cwd: options.cwd, shell: false });
@@ -48,6 +49,23 @@ test("non-repository is quiet and killed is authoritative", async (t) => {
 
   const killed: GitExec = async () => ({ stdout: "", stderr: "", code: 0, killed: true });
   await assert.rejects(() => detectRoot(killed, directory), GitCancelledError);
+});
+
+test("a running controller discovers a real external git init", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "pi-codeui-init-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const controller = new GitStateController(exec, directory, 5, 20);
+  t.after(() => controller.dispose());
+  const stateKind = () => controller.state.kind;
+  await controller.refresh();
+  assert.equal(stateKind(), "none");
+
+  await git(directory, "init", "-b", "main");
+  for (let attempt = 0; attempt < 30 && stateKind() !== "repo"; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.equal(stateKind(), "repo");
+  if (controller.state.kind === "repo") assert.equal(controller.state.root, await realpath(directory));
 });
 
 test("Git calls forward argv/options and expose typed command and parse failures", async () => {
