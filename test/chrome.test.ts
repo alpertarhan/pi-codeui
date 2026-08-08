@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { homedir } from "node:os";
 import test from "node:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
@@ -24,7 +25,7 @@ test("global chrome matches the mockup hierarchy and stays width-safe", async ()
   await git.refresh();
   const settings = cloneSettings(DEFAULT_SETTINGS);
   const context = {
-    cwd: "/Users/alper/dev/pi/pi-codeui",
+    cwd: `${homedir()}/dev/pi/pi-codeui`,
     model: "gpt-5.3-codex",
     thinking: "xhigh",
     agentRunning: false,
@@ -82,7 +83,7 @@ test("chrome render matrix is width-safe and preserves textual state across glyp
   const git = new GitStateController(exec, "/repo");
   await git.refresh();
   const context = {
-    cwd: "/Users/alper/dev/pi/pi-codeui",
+    cwd: `${homedir()}/dev/pi/pi-codeui`,
     model: "gpt-5.3-codex",
     thinking: "high",
     agentRunning: true,
