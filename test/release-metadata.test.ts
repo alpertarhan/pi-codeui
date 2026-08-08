@@ -7,7 +7,7 @@ const json = async (path: string) => JSON.parse(await readFile(new URL(path, imp
 test("v1 package metadata exposes the canonical Pi package and gallery contract", async () => {
   const pkg = await json("../package.json");
   assert.equal(pkg.name, "pi-codeui");
-  assert.equal(pkg.version, "1.0.0");
+  assert.equal(pkg.version, "1.0.1");
   assert.equal(pkg.license, "MIT");
   assert.deepEqual(pkg.repository, { type: "git", url: "git+https://github.com/alpertarhan/pi-codeui.git" });
   assert.equal(pkg.homepage, "https://github.com/alpertarhan/pi-codeui#readme");
@@ -16,7 +16,7 @@ test("v1 package metadata exposes the canonical Pi package and gallery contract"
   assert.match(pkg.pi?.image ?? "", /^https:\/\/raw\.githubusercontent\.com\/alpertarhan\/pi-codeui\//);
   assert.deepEqual(pkg.pi?.extensions, ["./src/index.ts"]);
   assert.deepEqual(pkg.pi?.themes, ["./themes/codeui-midnight.json"]);
-  for (const file of ["CODE_OF_CONDUCT.md", "CONTRIBUTING.md", "SECURITY.md", "PRODUCT_PLAN.md", "docs/COMPATIBILITY.md", "docs/MIGRATION-v1.md", "docs/RELEASING.md", "schemas/codeui.settings.schema.json"]) {
+  for (const file of ["CODE_OF_CONDUCT.md", "CONTRIBUTING.md", "SECURITY.md", "PRODUCT_PLAN.md", "docs/screenshots/pi-codeui-fullscreen.png", "docs/COMPATIBILITY.md", "docs/MIGRATION-v1.md", "docs/RELEASING.md", "schemas/codeui.settings.schema.json"]) {
     const shipped = pkg.files.some((entry: string) => file === entry || file.startsWith(`${entry}/`));
     assert.ok(shipped, `${file} must ship in the npm package`);
   }

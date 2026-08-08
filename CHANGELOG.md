@@ -4,6 +4,10 @@ All notable changes to `pi-codeui` are documented here. The project follows sema
 
 ## Unreleased
 
+## 1.0.1 - 2026-08-08
+
+- Replace the conceptual README hero mockup with an actual fullscreen terminal capture so the published package sets accurate visual expectations.
+
 ## 1.0.0 - 2026-08-08
 
 - Make the rail conversation-first with a session-local `Session` home, conversation/resource counts, and general-chat activity labels.

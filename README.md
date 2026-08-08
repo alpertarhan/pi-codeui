@@ -10,7 +10,9 @@
 
 Keep chat at the center while Git changes, tool activity, checks, search, session resources, and Vim/Neovim workflows stay visible in a keyboard-first side rail.
 
-![pi-codeui terminal workspace](./docs/mockups/pi-codeui-terminal.png)
+![Actual pi-codeui fullscreen terminal workspace](./docs/screenshots/pi-codeui-fullscreen.png)
+
+> Actual fullscreen TUI capture. Transcript content, visible tabs, colors, and spacing vary with the active session, terminal width, installed extensions, and theme.
 
 ## Why pi-codeui?
 
