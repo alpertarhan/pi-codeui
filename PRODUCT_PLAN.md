@@ -4,10 +4,11 @@
 
 `pi-codeui` is a Pi Coding Agent extension package that adds a Git-aware, keyboard-first terminal UI without replacing Pi's conversation flow.
 
-The selected experience is hybrid:
+The selected experience is an integrated developer workspace:
 
-- a compact, persistent changed-files widget above the prompt editor;
-- a right-side diff explorer opened on demand;
+- project-aware global chrome and a bordered, focus-aware prompt;
+- a persistent, resizable right rail for Changes, Activity, Checks, Search, and extension widgets;
+- safe file/hunk stage, unstage, discard, and commit flows;
 - an optional minimal Vim mode for Pi's prompt editor;
 - real Neovim integration by suspending Pi's TUI, opening `nvim`, then restoring Pi.
 
@@ -20,7 +21,7 @@ Pi's public extension API already supports the required building blocks:
 - `ctx.ui.setStatus()` for repository/refresh state;
 - `ctx.ui.setEditorComponent()` and `CustomEditor` for modal prompt editing;
 - `pi.registerCommand()` and `pi.registerShortcut()` for navigation;
-- `pi.exec()` for read-only Git commands;
+- `pi.exec()` for shell-free Git queries and guarded mutations;
 - lifecycle/tool events for event-driven refreshes;
 - package themes and Pi's existing theme tokens for styling.
 
@@ -211,7 +212,7 @@ Debounce closely grouped refreshes. Do not recursively watch the repository or r
 ### 5.3 Extension compatibility
 
 - use unique widget/status keys such as `pi-codeui.git`;
-- use `setStatus()` instead of replacing Pi's footer;
+- own the global header/footer only inside CodeUI's bounded fullscreen adapter and restore by component identity;
 - keep Vim mode off by default because only one custom editor factory can effectively own the editor;
 - capture and restore the previous editor factory when toggling Vim mode;
 - guard terminal-only behavior with `ctx.mode === "tui"`;
@@ -415,9 +416,9 @@ Manual TUI matrix:
 | Large diffs freeze rendering | Lazy per-file loading, byte/line caps, render caching |
 | Git paths break parsing or commands | NUL-delimited porcelain, argv arrays, `--` path separator |
 | Stale widget after external edits | Refresh on explorer open/manual action; add optional watcher only if users need it |
-| Destructive Git action causes data loss | Keep MVP read-only; confirmations and preview in M4 |
+| Destructive Git action causes data loss | Restrict supported targets, require explicit confirmation, preview/check patches, and fail closed for conflicts/untracked deletion |
 | Narrow terminal makes side overlay unusable | Automatic transient dashboard fallback |
 
-## 11. Recommended build order
+## 11. v1 release posture
 
-Build M0 through M3 first and release that as `0.1.0`. It delivers the selected hybrid UI and both Vim paths while keeping Git operations read-only. Add mutating Git actions only after the status/diff UI and lifecycle cleanup are stable.
+Milestones M0–M10 are complete. v1 release candidates require the terminal/accessibility matrix, large-workspace profile, configured-extension audit, canonical package metadata, full test suite, package-content smoke check, Git install smoke test, and green GitHub Actions run. Advanced destructive Git operations remain post-v1 unless they can preserve the same fail-closed contract.

@@ -4,6 +4,8 @@ All notable changes to `pi-codeui` are documented here. The project follows sema
 
 ## Unreleased
 
+## 1.0.0-rc.1 - 2026-08-08
+
 - Add deterministic terminal, viewport, Nerd Font/Unicode/ASCII, and non-color accessibility matrices.
 - Profile large repositories, diffs, Activity/diagnostics, and fuzzy search; cache repeated diff hunk indexing.
 - Validate the configured Pi extension matrix and harden identity-safe adoption of externally replaced layouts.
