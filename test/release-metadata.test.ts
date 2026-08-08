@@ -21,9 +21,14 @@ test("v1 package metadata exposes the canonical Pi package and gallery contract"
   }
 });
 
-test("split compatibility does not import optional pi-tui runtime guards", async () => {
-  const splitSource = await readFile(new URL("../src/split-panel.ts", import.meta.url), "utf8");
-  assert.doesNotMatch(splitSource, /\bisViewportTUI\b/, "cross-install Pi runtimes may not export the optional helper");
+test("cross-install compatibility does not import optional pi-tui runtime helpers", async () => {
+  const paths = ["changes-widget.ts", "chrome.ts", "git-explorer.ts", "glyphs.ts", "index.ts", "split-panel.ts", "terminal.ts", "vim-editor.ts"];
+  const sources = await Promise.all(paths.map((path) => readFile(new URL(`../src/${path}`, import.meta.url), "utf8")));
+  const runtimeImports = sources.flatMap((source) => [...source.matchAll(/import\s+(?!type\b)[\s\S]*?from "@earendil-works\/pi-tui";/g)].map((match) => match[0])).join("\n");
+  for (const helper of ["isViewportTUI", "stripTerminalSequences", "truncateToWidth", "visibleWidth", "wrapTextWithAnsi", "decodeKittyPrintable"]) {
+    assert.doesNotMatch(runtimeImports, new RegExp(`\\b${helper}\\b`), `${helper} is not guaranteed across host Pi package trees`);
+  }
+  const splitSource = sources[5] ?? "";
   assert.match(splitSource, /typeof .*setLayoutRoot.*=== "function"/, "viewport detection must use the capability CodeUI actually needs");
 });
 

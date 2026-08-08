@@ -1,13 +1,16 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import {
-  HStack,
-  VStack,
-  type Component,
-  type StackEntry,
-  type TUI,
-  type TuiInputListener,
-  type ViewportTUI,
+import * as PiTuiRuntime from "@earendil-works/pi-tui";
+import type {
+  Component,
+  StackEntry,
+  TUI,
+  TuiInputListener,
+  ViewportTUI,
+  VStack as VStackComponent,
 } from "@earendil-works/pi-tui";
+
+const HStack = PiTuiRuntime.HStack;
+const VStack = PiTuiRuntime.VStack;
 import type { ActivityTracker } from "./activity.ts";
 import type { GitExec } from "./git/git.ts";
 import { GitExplorer, type GitExplorerResult } from "./git-explorer.ts";
@@ -22,17 +25,19 @@ type InternalViewportTui = ViewportTUI & {
 };
 
 const supportsViewportLayout = (tui: TUI): tui is InternalViewportTui =>
-  typeof (tui as TUI & { setLayoutRoot?: unknown }).setLayoutRoot === "function";
+  typeof HStack === "function"
+  && typeof VStack === "function"
+  && typeof (tui as TUI & { setLayoutRoot?: unknown }).setLayoutRoot === "function";
 
 type DisposableComponent = Component & { dispose?(): void };
-type InternalStack = VStack & {
+type InternalStack = VStackComponent & {
   entries: StackEntry[];
   gap: number;
   align: "stretch" | "start" | "center" | "end";
 };
 
 export function extractExtensionWidgetDock(root: Component): { mainRoot: Component; widgets: Component[] } {
-  if (!(root instanceof VStack)) return { mainRoot: root, widgets: [] };
+  if (typeof VStack !== "function" || !(root instanceof VStack)) return { mainRoot: root, widgets: [] };
   const rootStack = root as InternalStack;
   if (rootStack.entries.length !== 2) return { mainRoot: root, widgets: [] };
   const dockEntry = rootStack.entries[1];

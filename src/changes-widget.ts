@@ -1,5 +1,6 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth, type Component, type TUI } from "@earendil-works/pi-tui";
+import type { Component, TUI } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth } from "./tui-compat.ts";
 import type { GitStateController, GitViewState } from "./git-state.ts";
 import { resolveGlyphs } from "./glyphs.ts";
 import { BORDER_PRESETS, DENSITY_PRESETS, type CodeuiSettings } from "./settings.ts";

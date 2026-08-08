@@ -1,13 +1,11 @@
 import { CustomEditor, type KeybindingsManager } from "@earendil-works/pi-coding-agent";
 import {
-  decodeKittyPrintable,
   matchesKey,
-  truncateToWidth,
-  visibleWidth,
   type EditorTheme,
   type KeyId,
   type TUI,
 } from "@earendil-works/pi-tui";
+import { decodeKittyPrintable, truncateToWidth, visibleWidth } from "./tui-compat.ts";
 
 export type VimMode = "normal" | "insert";
 

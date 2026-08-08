@@ -1,4 +1,4 @@
-import { stripTerminalSequences, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { stripTerminalSequences, truncateToWidth, visibleWidth } from "./tui-compat.ts";
 import type { CodeuiSettings, FallbackGlyphPreset, IconKey } from "./settings.ts";
 
 export const GLYPH_PRESETS: Record<FallbackGlyphPreset, Record<IconKey, string>> = {

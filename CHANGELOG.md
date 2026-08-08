@@ -4,6 +4,12 @@ All notable changes to `pi-codeui` are documented here. The project follows sema
 
 ## Unreleased
 
+## 1.0.0-rc.4 - 2026-08-08
+
+- Remove runtime imports of optional pi-tui ANSI, width, wrapping, truncation, and Kitty decoding helpers.
+- Add a dependency-free terminal compatibility layer and guard optional viewport constructors behind runtime capabilities.
+- Add a legacy-host module-load regression with optional pi-tui exports deliberately absent.
+
 ## 1.0.0-rc.3 - 2026-08-08
 
 - Remove the optional `isViewportTUI` runtime import that could crash when CodeUI and the host Pi resolved different pi-tui package trees.

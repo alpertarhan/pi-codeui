@@ -1,6 +1,7 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import type { QuickfixEntry } from "./external-editor.ts";
-import { Key, matchesKey, stripTerminalSequences, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type Focusable } from "@earendil-works/pi-tui";
+import { Key, matchesKey, type Component, type Focusable } from "@earendil-works/pi-tui";
+import { stripTerminalSequences, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "./tui-compat.ts";
 import { formatDuration, relativeTime, type ActivityRecord, type ActivityTracker, type Diagnostic } from "./activity.ts";
 import { applyPatchHunk, commitStaged, discardTrackedFile, getDiff, parsePatchHunks, previewUntracked, stageFile, unstageFile, validateCommitMessage, type DiffScope, type GitExec, type PatchHunk } from "./git/git.ts";
 import type { FileChange, TextResult } from "./git/types.ts";
