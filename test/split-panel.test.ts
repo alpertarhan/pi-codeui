@@ -39,8 +39,18 @@ test("Pi extension widgets are extracted from the transcript dock", () => {
   const root = new VStack([line("transcript"), dock]);
   const extracted = extractExtensionWidgetDock(root);
   assert.deepEqual(extracted.widgets, [above, below]);
-  assert.doesNotMatch(extracted.mainRoot.render(80).join("\n"), /TODO WIDGET|BELOW WIDGET/);
+  const main = extracted.mainRoot.render(80).join("\n");
+  assert.doesNotMatch(main, /TODO WIDGET|BELOW WIDGET/);
+  assert.match(main, /pending|status|editor|footer/, "non-widget status/editor components must keep their native placement");
   assert.match(extracted.widgets.flatMap((widget) => widget.render(80)).join("\n"), /TODO WIDGET/);
+});
+
+test("widget docking fails closed when another Pi version or extension changes the layout shape", () => {
+  const line = (text: string): Component => ({ render: () => [text], invalidate: () => {} });
+  const malformed = new VStack([line("transcript"), new VStack([line("unexpected"), line("shape")])]);
+  const extracted = extractExtensionWidgetDock(malformed);
+  assert.equal(extracted.mainRoot, malformed);
+  assert.deepEqual(extracted.widgets, []);
 });
 
 test("split restores responsive panel width and publishes resize state", () => {
@@ -125,6 +135,58 @@ test("fullscreen split wraps and restores Pi's existing layout root", () => {
 
   controller.dispose();
   assert.equal((tui as any).layoutRoot, originalRoot);
+  git.dispose();
+});
+
+test("split adopts later layout owners and never clobbers their root on dispose", () => {
+  const tui = new TuiAltScreen(terminal(), false, "/tmp");
+  const originalRoot = component();
+  const externalRoot: Component = { render: () => ["EXTERNAL LAYOUT"], invalidate: () => {} };
+  tui.setLayoutRoot(originalRoot);
+  const git = new GitStateController(async () => ({ stdout: "", stderr: "", code: 128, killed: false }), "/repo");
+  const controller = new SplitPanelController(tui, {
+    git,
+    exec: async () => ({ stdout: "", stderr: "", code: 0, killed: false }),
+    getSettings: () => DEFAULT_SETTINGS,
+    theme: theme as any,
+    onAction: () => {},
+  });
+
+  assert.equal(controller.ensure(), true);
+  const replacedPanel = (controller as any).panel;
+  let replacedPanelDisposed = false;
+  const disposePanel = replacedPanel.dispose.bind(replacedPanel);
+  replacedPanel.dispose = () => { replacedPanelDisposed = true; disposePanel(); };
+  tui.setLayoutRoot(externalRoot);
+  assert.equal(controller.installed, false);
+  assert.equal(controller.ensure(), true, "CodeUI should wrap the replacement root rather than restoring stale internals");
+  assert.equal(replacedPanelDisposed, true, "adopting an external root must release the replaced panel subscriptions");
+  assert.match(((tui as any).layoutRoot as Component).render(160).join("\n"), /EXTERNAL LAYOUT/);
+  controller.dispose();
+  assert.equal((tui as any).layoutRoot, externalRoot, "dispose must restore the latest external owner");
+  git.dispose();
+});
+
+test("widget docking can be disabled without hiding native extension widgets", () => {
+  const line = (text: string): Component => ({ render: () => [text], invalidate: () => {} });
+  const tui = new TuiAltScreen(terminal(), false, "/tmp");
+  const dock = new VStack([line("pending"), line("status"), line("TODO NATIVE"), line("editor"), line("PROCESS NATIVE"), line("footer")]);
+  tui.setLayoutRoot(new VStack([line("transcript"), dock]));
+  const settings = cloneSettings(DEFAULT_SETTINGS);
+  settings.explorer.dockWidgets = false;
+  const git = new GitStateController(async () => ({ stdout: "", stderr: "", code: 128, killed: false }), "/repo");
+  const controller = new SplitPanelController(tui, {
+    git,
+    exec: async () => ({ stdout: "", stderr: "", code: 0, killed: false }),
+    getSettings: () => settings,
+    theme: theme as any,
+    onAction: () => {},
+  });
+
+  assert.equal(controller.ensure(), true);
+  const rendered = ((tui as any).layoutRoot as Component).render(160).join("\n");
+  assert.match(rendered, /TODO NATIVE|PROCESS NATIVE/);
+  controller.dispose();
   git.dispose();
 });
 

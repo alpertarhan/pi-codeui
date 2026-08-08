@@ -131,6 +131,13 @@ export class SplitPanelController {
 
     const currentRoot = internal.layoutRoot;
     if (!currentRoot) return false;
+    if (this.splitRoot && currentRoot !== this.splitRoot) {
+      this.panel?.dispose();
+      this.panel = undefined;
+      this.mainRoot = undefined;
+      this.dockedWidgets = [];
+      this.splitRoot = undefined;
+    }
     this.originalRoot = currentRoot;
     this.configureWidgetDock();
     this.panel = this.createPanel();

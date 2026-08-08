@@ -157,6 +157,8 @@ The changes widget remains display-only. Git Explorer supports shell-free per-fi
 
 Pi's public extension API currently exposes overlays but not side panels. To deliver a reflowing split without maintaining a separate Pi fork, the current pre-1.0 adapter wraps Pi 0.84's fullscreen `layoutRoot` with pi-tui's `HStack` and restores it on reload/shutdown. This adapter is intentionally bounded to the package's Pi 0.84 peer range. If the internal root is unavailable, pi-codeui fails closed to the overlay/dashboard instead of replacing an unknown layout. A future upstream `setSidePanel` API should replace this adapter.
 
+The versioned installed-extension audit, global UI ownership contract, widget-density notes, and runtime checks are documented in [docs/COMPATIBILITY.md](./docs/COMPATIBILITY.md).
+
 ## License
 
 MIT
