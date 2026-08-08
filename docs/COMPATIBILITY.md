@@ -1,12 +1,12 @@
 # Pi extension compatibility
 
-This matrix records the configured extension set used for the CodeUI v1.0.0 release audit. It is evidence for the listed versions, not a promise about every future release of those packages.
+This matrix records the configured extension set used for the CodeUI v1.1.0 release audit. It is evidence for the listed versions, not a promise about every future release of those packages.
 
 ## Ownership contract
 
 CodeUI is the only extension in this matrix that owns Pi's global header, footer, editor component, fullscreen `layoutRoot`, focus, and raw input listener. Other extensions use distinct widget/status keys or `setWorkingMessage`.
 
-With `explorer.dockWidgets: true`, CodeUI moves Pi's existing above/below-editor widget containers into the `EXTENSIONS` section. Docking is generic and preserves component instances; it does not fork, rewrite, or key-match third-party widgets. Set `explorer.dockWidgets: false` to keep Pi's native widget placement.
+With `explorer.dockWidgets: true`, CodeUI keeps its own dirty-Changes strip beside the prompt and moves other above/below-editor widgets into the `EXTENSIONS` section. Third-party docking is generic and preserves component instances; it does not fork, rewrite, or key-match external widgets. Set `explorer.dockWidgets: false` to keep Pi's native widget placement.
 
 The Pi 0.84 split adapter is fail-closed. It detects the viewport through the `setLayoutRoot` capability CodeUI actually uses rather than importing optional pi-tui runtime type guards. Viewport constructors are accessed through a guarded namespace, while ANSI stripping, terminal width, truncation, wrapping, and Kitty printable decoding live in CodeUI's dependency-free compatibility layer. Duplicate/cross-install dependency trees therefore cannot crash because a host pi-tui omits newer helper or viewport exports.
 
@@ -38,6 +38,8 @@ The Pi 0.84 split adapter is fail-closed. It detects the viewport through the `s
 | `pi-smart-compact` | 8.0.6 | Transient progress widget/status | Compatible; dock density may increase |
 | Local `herdr-agent-state.ts` | local | Socket events only; no Pi UI | Compatible |
 
+CodeUI registers one public, display-only Markdown transformer for `You`/`Pi` labels. It does not register or override built-in tools, replace message components, or mutate stored messages. No configured extension currently registers another Markdown transformer.
+
 No configured extension shares CodeUI's command names, `Ctrl+Shift+G` shortcut, `pi-codeui.changes` widget key, or `pi-codeui.*` status keys. No configured extension calls `setHeader`, `setFooter`, `setEditorComponent`, or `setLayoutRoot`.
 
 The two density notes are visual, not correctness conflicts. Use `w` to collapse the `EXTENSIONS` section or disable `explorer.dockWidgets` when persistent and transient widgets are active together.
@@ -51,7 +53,7 @@ npm run dev -- --list-models
 
 The split compatibility tests cover:
 
-- Generic above/below widget extraction while native status/editor components remain in place.
+- Generic third-party widget extraction while the CodeUI Changes strip and native status/editor components remain in place.
 - Unknown layout shape fail-closed behavior.
 - Optional native widget placement.
 - External layout replacement/adoption and identity-safe restore.

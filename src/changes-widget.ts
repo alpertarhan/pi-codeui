@@ -6,37 +6,46 @@ import { resolveGlyphs } from "./glyphs.ts";
 import { BORDER_PRESETS, DENSITY_PRESETS, type CodeuiSettings } from "./settings.ts";
 import { sanitizeTerminalLine } from "./terminal.ts";
 
+const codeuiChangesWidgets = new WeakSet<object>();
+
+export function markCodeuiChangesWidget<T extends Component>(component: T): T {
+  codeuiChangesWidgets.add(component);
+  return component;
+}
+
+export function isCodeuiChangesWidget(component: Component): boolean {
+  return codeuiChangesWidgets.has(component);
+}
+
 const fit = (text: string, width: number): string => {
   const value = truncateToWidth(text, Math.max(0, width), "…");
   return value + " ".repeat(Math.max(0, width - visibleWidth(value)));
 };
 
 export function renderChangesWidget(state: GitViewState, settings: Readonly<CodeuiSettings>, theme: Theme, width: number): string[] {
-  if (!settings.widget.enabled || width <= 0 || state.kind === "none") return [];
-  if (state.kind === "loading" && !state.previous) return [truncateToWidth(theme.fg("dim", "git: loading…"), width, "…")];
-  if (state.kind === "error") return [truncateToWidth(theme.fg("error", `git: ${sanitizeTerminalLine(state.message)}`), width, "…")];
+  if (!settings.widget.enabled || width <= 0 || state.kind === "none" || state.kind === "error") return [];
   const ready = state.kind === "loading" ? state.previous : state;
-  if (!ready || ready.kind === "none") return state.kind === "loading" ? [truncateToWidth(theme.fg("dim", "git: loading…"), width, "")] : [];
+  if (!ready || ready.kind === "none") return [];
 
   const { icons } = resolveGlyphs(settings);
   const { status, working, cached } = ready;
   const branch = sanitizeTerminalLine(status.branch.name ?? "detached");
   const visibleFiles = status.files.filter((file) => settings.git.showUntracked || !file.untracked);
+  if (visibleFiles.length === 0) return [];
   const counts = {
     staged: visibleFiles.filter((file) => file.staged).length,
     unstaged: visibleFiles.filter((file) => file.unstaged).length,
     untracked: visibleFiles.filter((file) => file.untracked).length,
     conflicted: visibleFiles.filter((file) => file.conflicted).length,
   };
-  const dirty = visibleFiles.length > 0;
   const parts = [
     theme.bold(theme.fg("accent", "CHANGES")),
     theme.fg("accent", `${icons.branch} ${branch}`),
-    dirty ? theme.fg("warning", `${icons.added}${counts.staged} ${icons.modified}${counts.unstaged} ${icons.untracked}${counts.untracked} !${counts.conflicted}`) : theme.fg("success", "clean"),
+    theme.fg("warning", `${icons.added}${counts.staged} ${icons.modified}${counts.unstaged} ${icons.untracked}${counts.untracked} !${counts.conflicted}`),
   ];
   const added = working.added + cached.added;
   const deleted = working.deleted + cached.deleted;
-  if (dirty) parts.push(theme.fg("toolDiffAdded", `+${added}`), theme.fg("toolDiffRemoved", `-${deleted}`));
+  parts.push(theme.fg("toolDiffAdded", `+${added}`), theme.fg("toolDiffRemoved", `-${deleted}`));
   const files = visibleFiles
     .slice(0, settings.widget.maxFiles)
     .map((file) => `${file.conflicted ? "!" : file.untracked ? icons.untracked : file.staged ? icons.added : icons.modified} ${sanitizeTerminalLine(file.path)}`);

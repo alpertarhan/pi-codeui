@@ -19,6 +19,7 @@ Keep chat at the center while Git changes, tool activity, checks, search, sessio
 Pi already provides the conversation and agent runtime. pi-codeui adds persistent workspace context without replacing that flow:
 
 - **Session-first:** every conversation opens on a calm overview instead of an empty Git panel.
+- **Readable conversation identity:** display-only `You` and `Pi · working` labels clarify the chat flow without replacing Pi's native transcript or tools.
 - **Code-aware:** safe Git actions, diffs, diagnostics, quickfix export, and exact editor navigation appear when relevant.
 - **General-purpose:** research, files, exports, decisions, and other tool activity are useful even outside a Git repository.
 - **Terminal-native:** keyboard and mouse controls, responsive widths, Unicode/ASCII fallbacks, and native Pi themes.
@@ -65,7 +66,7 @@ Use Pi's `/theme` picker to select the bundled `codeui-midnight` theme if desire
 | **Search** | Unified fuzzy search across messages, files, activity, and checks |
 | **Extensions** | Docked compatible Pi widgets such as todo/status components |
 
-The global header shows project/session identity and one agent state. The footer prioritizes working directory, token flow, turn, context pressure, model, and thinking level without duplicating rail content.
+The global header shows project/session identity and one agent state. The footer prioritizes working directory, token flow, turn, context pressure, model, and thinking level without duplicating rail content. When files are dirty, a compact Changes strip stays beside the prompt even while the right rail is open; clean workspaces remain quiet.
 
 ## Essential controls
 
@@ -116,7 +117,8 @@ Start with the bundled schema:
   "chrome": {
     "header": true,
     "footer": true,
-    "editor": true
+    "editor": true,
+    "messageLabels": true
   },
   "explorer": {
     "layout": "split",
@@ -149,6 +151,20 @@ Glyph presets:
 
 The terminal owns font family, size, ligatures, and rendering. See [`docs/terminal-profiles.md`](./docs/terminal-profiles.md) for Ghostty, Kitty, and WezTerm examples.
 
+### Chat-focused Pi settings
+
+For a quieter conversation surface closer to the screenshot, these optional **Pi host settings** belong in `~/.pi/agent/settings.json` (not `codeui.settings.json`):
+
+```json
+{
+  "quietStartup": true,
+  "outputPad": 1,
+  "editorPaddingX": 1
+}
+```
+
+`quietStartup` hides the startup resource inventory; pi-codeui does not rewrite that native transcript content. Set `chrome.messageLabels` to `false` if you prefer Pi's unlabelled native messages.
+
 ### Vim and Neovim
 
 Embedded Vim mode is intentionally small and optional. Normal mode supports `h/j/k/l`, `w/b`, `0/$`, `x`, `i`, and `a`; it is not a Vim emulator. Toggle it for the current session with `/codeui-vim`.
@@ -159,7 +175,7 @@ Pi's native `Ctrl+G` flow edits the prompt with Pi's configured external editor.
 
 Git operations use direct argv execution and repository-relative validation. Stage/unstage, tracked-file discard, hunk actions, commits, and quickfix export are guarded by the current repository state. Unsupported binary, truncated, untracked, renamed, conflicted, or whitespace-filtered hunk operations fail closed.
 
-Pi 0.84 does not yet expose a public side-panel API. The bounded split adapter uses the compatible fullscreen layout root and falls back to an overlay when that capability is unavailable or has been replaced unexpectedly. See [`docs/COMPATIBILITY.md`](./docs/COMPATIBILITY.md) for the tested extension matrix and ownership contract.
+Conversation labels use Pi's public, display-only Markdown transformer and do not modify session data or take ownership of built-in tools. Pi 0.84 does not yet expose a public side-panel API, so the bounded split adapter uses the compatible fullscreen layout root and falls back to an overlay when that capability is unavailable or has been replaced unexpectedly. See [`docs/COMPATIBILITY.md`](./docs/COMPATIBILITY.md) for the tested extension matrix and ownership contract.
 
 ## Commands
 

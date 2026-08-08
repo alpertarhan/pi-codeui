@@ -12,6 +12,7 @@ import type {
 const HStack = PiTuiRuntime.HStack;
 const VStack = PiTuiRuntime.VStack;
 import type { ActivityTracker } from "./activity.ts";
+import { isCodeuiChangesWidget } from "./changes-widget.ts";
 import type { GitExec } from "./git/git.ts";
 import { GitExplorer, type ExplorerView, type GitExplorerResult } from "./git-explorer.ts";
 import type { GitStateController } from "./git-state.ts";
@@ -31,11 +32,24 @@ const supportsViewportLayout = (tui: TUI): tui is InternalViewportTui =>
   && typeof (tui as TUI & { setLayoutRoot?: unknown }).setLayoutRoot === "function";
 
 type DisposableComponent = Component & { dispose?(): void };
+type ChildContainer = Component & { children: Component[] };
 type InternalStack = VStackComponent & {
   entries: StackEntry[];
   gap: number;
   align: "stretch" | "start" | "center" | "end";
 };
+
+const childrenOf = (component: Component): Component[] | undefined => {
+  const children = (component as Partial<ChildContainer>).children;
+  return Array.isArray(children) ? children : undefined;
+};
+
+const isSpacer = (component: Component): boolean => typeof PiTuiRuntime.Spacer === "function" && component instanceof PiTuiRuntime.Spacer;
+
+const filteredChildren = (source: Component, include: (child: Component) => boolean): Component => ({
+  render: (width) => (childrenOf(source) ?? []).filter(include).flatMap((child) => child.render(width)),
+  invalidate: () => source.invalidate?.(),
+});
 
 export function extractExtensionWidgetDock(root: Component): { mainRoot: Component; widgets: Component[] } {
   if (typeof VStack !== "function" || !(root instanceof VStack)) return { mainRoot: root, widgets: [] };
@@ -45,9 +59,19 @@ export function extractExtensionWidgetDock(root: Component): { mainRoot: Compone
   if (!dockEntry || !(dockEntry.component instanceof VStack)) return { mainRoot: root, widgets: [] };
   const dockStack = dockEntry.component as InternalStack;
   if (dockStack.entries.length !== 6) return { mainRoot: root, widgets: [] };
-  const widgetIndexes = new Set([2, 4]);
-  const widgets = dockStack.entries.filter((_entry, index) => widgetIndexes.has(index)).map((entry) => entry.component);
-  const dock = new VStack(dockStack.entries.filter((_entry, index) => !widgetIndexes.has(index)), { gap: dockStack.gap, align: dockStack.align });
+  const widgets: Component[] = [];
+  const dockEntries = dockStack.entries.flatMap((entry, index) => {
+    if (index !== 2 && index !== 4) return [entry];
+    if (isCodeuiChangesWidget(entry.component)) return [entry];
+    const children = childrenOf(entry.component);
+    if (!children?.some(isCodeuiChangesWidget)) {
+      widgets.push(entry.component);
+      return [];
+    }
+    widgets.push(filteredChildren(entry.component, (child) => !isCodeuiChangesWidget(child) && !isSpacer(child)));
+    return [{ ...entry, component: filteredChildren(entry.component, (child) => isCodeuiChangesWidget(child) || isSpacer(child)) }];
+  });
+  const dock = new VStack(dockEntries, { gap: dockStack.gap, align: dockStack.align });
   const mainRoot = new VStack(rootStack.entries.map((entry, index) => index === 1 ? { ...entry, component: dock } : entry), { gap: rootStack.gap, align: rootStack.align });
   return { mainRoot, widgets };
 }

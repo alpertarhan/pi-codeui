@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { TuiAltScreen, VStack, type Component, type Terminal } from "@earendil-works/pi-tui";
+import { Container, Spacer, TuiAltScreen, VStack, type Component, type Terminal } from "@earendil-works/pi-tui";
+import { markCodeuiChangesWidget } from "../src/changes-widget.ts";
 import { GitStateController } from "../src/git-state.ts";
 import { cloneSettings, DEFAULT_SETTINGS } from "../src/settings.ts";
 import { extractExtensionWidgetDock, SplitPanelController } from "../src/split-panel.ts";
@@ -43,6 +44,31 @@ test("Pi extension widgets are extracted from the transcript dock", () => {
   assert.doesNotMatch(main, /TODO WIDGET|BELOW WIDGET/);
   assert.match(main, /pending|status|editor|footer/, "non-widget status/editor components must keep their native placement");
   assert.match(extracted.widgets.flatMap((widget) => widget.render(80)).join("\n"), /TODO WIDGET/);
+});
+
+test("CodeUI Changes strip stays beside the prompt while third-party widgets dock", () => {
+  const line = (text: string): Component => ({ render: () => [text], invalidate: () => {} });
+  const changes = markCodeuiChangesWidget(line("CHANGES STRIP"));
+  const extensionAbove = line("PLAN WIDGET");
+  const extensionBelow = line("TODO WIDGET");
+  const above = new Container();
+  above.addChild(new Spacer(1));
+  above.addChild(changes);
+  above.addChild(extensionAbove);
+  const below = new Container();
+  below.addChild(extensionBelow);
+  const dock = new VStack([line("pending"), line("status"), above, line("editor"), below, line("footer")]);
+  const root = new VStack([line("transcript"), dock]);
+  const extracted = extractExtensionWidgetDock(root);
+  const main = extracted.mainRoot.render(80).join("\n");
+  const docked = extracted.widgets.flatMap((widget) => widget.render(80)).join("\n");
+  assert.match(main, /CHANGES STRIP/);
+  assert.doesNotMatch(main, /PLAN WIDGET|TODO WIDGET/);
+  assert.match(docked, /PLAN WIDGET/);
+  assert.match(docked, /TODO WIDGET/);
+  assert.doesNotMatch(docked, /CHANGES STRIP/);
+  above.addChild(line("LATER WIDGET"));
+  assert.match(extracted.widgets.flatMap((widget) => widget.render(80)).join("\n"), /LATER WIDGET/, "the filtered dock must follow Pi's live widget container");
 });
 
 test("widget docking fails closed when another Pi version or extension changes the layout shape", () => {

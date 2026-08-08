@@ -7,7 +7,7 @@ const json = async (path: string) => JSON.parse(await readFile(new URL(path, imp
 test("v1 package metadata exposes the canonical Pi package and gallery contract", async () => {
   const pkg = await json("../package.json");
   assert.equal(pkg.name, "pi-codeui");
-  assert.equal(pkg.version, "1.0.1");
+  assert.equal(pkg.version, "1.1.0");
   assert.equal(pkg.license, "MIT");
   assert.deepEqual(pkg.repository, { type: "git", url: "git+https://github.com/alpertarhan/pi-codeui.git" });
   assert.equal(pkg.homepage, "https://github.com/alpertarhan/pi-codeui#readme");

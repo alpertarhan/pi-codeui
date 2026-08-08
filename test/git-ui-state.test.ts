@@ -90,7 +90,7 @@ test("Git state aborts stale refreshes and dispose cancels work", async () => {
   assert.equal(aborts, 2);
 });
 
-test("changes widget handles nonrepo, clean, dirty, presets, and narrow widths", () => {
+test("changes widget stays quiet when clean and renders dirty presets width-safely", () => {
   const settings = cloneSettings(DEFAULT_SETTINGS);
   settings.appearance.glyphPreset = "ascii";
   const clean: GitViewState = {
@@ -99,7 +99,7 @@ test("changes widget handles nonrepo, clean, dirty, presets, and narrow widths",
     working: { files: 0, added: 0, deleted: 0, binaryFiles: 0 }, cached: { files: 0, added: 0, deleted: 0, binaryFiles: 0 },
   };
   assert.deepEqual(renderChangesWidget({ kind: "none" }, settings, theme, 40), []);
-  assert.match(renderChangesWidget(clean, settings, theme, 40)[0] ?? "", /git main.*clean/);
+  assert.deepEqual(renderChangesWidget(clean, settings, theme, 40), []);
 
   const file = { path: "src/a-very-long-file-name.ts", index: "M" as const, worktree: "M" as const, staged: true, unstaged: true, untracked: false, conflicted: false };
   const dirty: GitViewState = {
@@ -116,7 +116,7 @@ test("changes widget handles nonrepo, clean, dirty, presets, and narrow widths",
 
   settings.appearance.density = "comfortable";
   settings.appearance.borders = "square";
-  const comfortable = renderChangesWidget(clean, settings, theme, 60);
+  const comfortable = renderChangesWidget(dirty, settings, theme, 60);
   assert.equal(comfortable.length, 3);
   assert.match(comfortable[0] ?? "", /^┌/);
 });
@@ -134,9 +134,7 @@ test("widget hides untracked-only dirt when showUntracked is disabled", () => {
     },
     working: { files: 0, added: 0, deleted: 0, binaryFiles: 0 }, cached: { files: 0, added: 0, deleted: 0, binaryFiles: 0 },
   };
-  const line = renderChangesWidget(state, settings, theme, 80)[0] ?? "";
-  assert.match(line, /clean/);
-  assert.doesNotMatch(line, /\?1|new\.ts/);
+  assert.deepEqual(renderChangesWidget(state, settings, theme, 80), []);
 });
 
 test("terminal sanitizer and widget neutralize malicious Git text", () => {

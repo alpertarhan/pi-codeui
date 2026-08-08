@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { resolveRepoFile, runExternalEditor, runExternalQuickfix } from "../src/external-editor.ts";
-import { VimEditor } from "../src/vim-editor.ts";
+import { promptHint, VimEditor } from "../src/vim-editor.ts";
 
 const keyMap: Record<string, string[]> = {
   "app.interrupt": ["\x1b"],
@@ -104,6 +104,25 @@ test("non-modal CodeUI editor preserves normal typing and shows prompt chrome", 
   const active = editor.render(40).join("\n");
   assert.match(active, /ACTIVE/);
   assert.doesNotMatch(active, /RED/);
+});
+
+test("prompt chrome keeps mode left and context-aware actions right", () => {
+  const editor = new VimEditor(
+    { requestRender: () => {}, terminal: { rows: 24, columns: 100 } } as any,
+    editorTheme as any,
+    keybindings as any,
+    { startMode: "insert", modal: false, label: "PROMPT", hint: promptHint },
+  );
+  editor.focused = true;
+  const wide = editor.render(100).at(-1) ?? "";
+  assert.ok(wide.indexOf("PROMPT") < wide.indexOf("Ctrl+G editor"));
+  assert.match(wide, /Ctrl\+Shift\+G workspace/);
+  assert.match(wide, /Enter send/);
+  const narrow = editor.render(40).at(-1) ?? "";
+  assert.match(narrow, /^ PROMPT /);
+  assert.match(narrow, /Enter send/);
+  assert.doesNotMatch(narrow, /workspace/);
+  assert.equal(editor.render(8).at(-1), " PROMPT ", "an exact-width label must not disappear");
 });
 
 test("external editor argv is shell-free and repository-contained", async () => {

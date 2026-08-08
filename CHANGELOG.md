@@ -4,6 +4,13 @@ All notable changes to `pi-codeui` are documented here. The project follows sema
 
 ## Unreleased
 
+## 1.1.0 - 2026-08-08
+
+- Add public-API transcript identity labels for user and Pi messages, including a streaming `working` state, without replacing Pi's native transcript or tools.
+- Move prompt mode/status to the left border and add responsive send, external-editor, and workspace shortcut hints on the right.
+- Keep the compact dirty-Changes strip beside the prompt while the split rail is active; clean, non-Git, loading, and error states stay quiet.
+- Add `chrome.messageLabels` to disable transcript labels when a minimal native transcript is preferred.
+
 ## 1.0.1 - 2026-08-08
 
 - Replace the conceptual README hero mockup with an actual fullscreen terminal capture so the published package sets accurate visual expectations.

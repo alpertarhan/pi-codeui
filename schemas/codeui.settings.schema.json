@@ -34,7 +34,8 @@
       "properties": {
         "header": { "type": "boolean" },
         "footer": { "type": "boolean" },
-        "editor": { "type": "boolean" }
+        "editor": { "type": "boolean" },
+        "messageLabels": { "type": "boolean" }
       }
     },
     "widget": {

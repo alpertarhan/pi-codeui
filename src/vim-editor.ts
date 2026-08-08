@@ -9,11 +9,19 @@ import { decodeKittyPrintable, truncateToWidth, visibleWidth } from "./tui-compa
 
 export type VimMode = "normal" | "insert";
 
+export const promptHint = (width: number): string => width >= 84
+  ? " Ctrl+G editor · Ctrl+Shift+G workspace · Enter send "
+  : width >= 58
+    ? " ^G editor · ^⇧G workspace · Enter send "
+    : width >= 32 ? " Enter send " : "";
+
 export interface VimEditorOptions {
   startMode: VimMode;
   modal?: boolean;
   label?: string;
+  hint?: (width: number) => string;
   styleMode?: (mode: VimMode, label: string, focused: boolean) => string;
+  styleHint?: (mode: VimMode, text: string, focused: boolean) => string;
   styleBorder?: (mode: VimMode, text: string, focused: boolean) => string;
   onModeChange?: (mode: VimMode) => void;
 }
@@ -102,12 +110,16 @@ export class VimEditor extends CustomEditor {
     if (lines.length === 0 || width <= 0) return lines;
 
     const label = ` ${this.vimOptions.modal === false ? (this.vimOptions.label ?? "PROMPT") : this.mode.toUpperCase()} `;
-    const styled = this.vimOptions.styleMode?.(this.mode, label, this.focused) ?? this.borderColor(label);
-    const labelWidth = visibleWidth(styled);
-    if (labelWidth > width) return lines;
+    const hint = this.vimOptions.hint?.(width) ?? "";
+    const styledLabel = this.vimOptions.styleMode?.(this.mode, label, this.focused) ?? this.borderColor(label);
+    const styledHint = this.vimOptions.styleHint?.(this.mode, hint, this.focused) ?? hint;
+    const chromeWidth = visibleWidth(styledLabel) + visibleWidth(styledHint);
+    if (chromeWidth > width) return lines;
 
-    const last = lines.length - 1;
-    lines[last] = `${truncateToWidth(lines[last] ?? "", width - labelWidth, "")}${styled}`;
+    const borderText = "─".repeat(Math.max(0, width - chromeWidth));
+    const border = this.vimOptions.styleBorder?.(this.mode, borderText, this.focused)
+      ?? this.borderColor(borderText);
+    lines[lines.length - 1] = truncateToWidth(`${styledLabel}${border}${styledHint}`, width, "");
     return lines;
   }
 }

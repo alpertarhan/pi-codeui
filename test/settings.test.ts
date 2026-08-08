@@ -28,7 +28,7 @@ async function eventually(check: () => boolean, timeout = 4000): Promise<void> {
 test("defaults and concrete appearance presets are complete", () => {
   assert.equal(DEFAULT_SETTINGS.appearance.theme, "codeui-midnight");
   assert.equal(DEFAULT_SETTINGS.appearance.density, "compact");
-  assert.deepEqual(DEFAULT_SETTINGS.chrome, { header: true, footer: true, editor: true });
+  assert.deepEqual(DEFAULT_SETTINGS.chrome, { header: true, footer: true, editor: true, messageLabels: true });
   assert.equal(DEFAULT_SETTINGS.explorer.layout, "split");
   assert.equal(DEFAULT_SETTINGS.explorer.splitWidth, "34%");
   assert.equal(DEFAULT_SETTINGS.explorer.overlayWidth, "52%");
@@ -42,7 +42,7 @@ test("normalization ignores unknown keys and inherits invalid values", () => {
   const result = normalizeSettings({
     unknown: true,
     appearance: { theme: "", density: "tiny", borders: "square", extra: 1 },
-    chrome: { header: "yes", footer: false },
+    chrome: { header: "yes", footer: false, messageLabels: false },
     widget: { maxFiles: 999, enabled: false },
     explorer: { layout: "sideways", splitWidth: "75%", overlayWidth: "99%", dockWidgets: "yes", maxDockRows: 99, diffContext: 0 },
     vim: { externalEditor: [] },
@@ -57,6 +57,7 @@ test("normalization ignores unknown keys and inherits invalid values", () => {
   assert.equal(result.settings.explorer.maxDockRows, DEFAULT_SETTINGS.explorer.maxDockRows);
   assert.equal(result.settings.chrome.header, true);
   assert.equal(result.settings.chrome.footer, false);
+  assert.equal(result.settings.chrome.messageLabels, false);
   assert.equal(result.settings.widget.enabled, false);
   assert.equal(result.settings.explorer.diffContext, 0);
   assert.ok(result.warnings.some((warning) => warning.includes("unknown field")));

@@ -9,11 +9,13 @@ function extension() {
   const handlers = new Map<string, (...args: any[]) => any>();
   const commands = new Map<string, any>();
   const shortcuts = new Map<string, any>();
+  const markdownTransformers: Array<(markdown: string, context: any) => string> = [];
   let gitCalls = 0;
   const pi = {
     on: (name: string, handler: (...args: any[]) => any) => handlers.set(name, handler),
     registerCommand: (name: string, command: unknown) => commands.set(name, command),
     registerShortcut: (key: string, shortcut: unknown) => shortcuts.set(key, shortcut),
+    registerMarkdownTransformer: (transformer: (markdown: string, context: any) => string) => markdownTransformers.push(transformer),
     exec: async (_command: string, args: string[]) => {
       gitCalls++;
       if (args[0] === "rev-parse") return { stdout: "/repo\n", stderr: "", code: 0, killed: false };
@@ -22,7 +24,7 @@ function extension() {
     },
   };
   codeui(pi as unknown as ExtensionAPI);
-  return { handlers, commands, shortcuts, get gitCalls() { return gitCalls; } };
+  return { handlers, commands, shortcuts, markdownTransformers, get gitCalls() { return gitCalls; } };
 }
 
 function context(mode: string, overrides: Record<string, unknown> = {}) {
@@ -78,6 +80,8 @@ test("commands and shortcut register; doctor is safe outside TUI", async () => {
   assert.deepEqual([...ext.commands.keys()], ["codeui", "codeui-reset-workspace", "codeui-refresh", "codeui-vim", "codeui-doctor"]);
   for (const event of ["turn_start", "message_end", "session_info_changed", "session_compact", "session_tree", "tool_execution_start", "tool_execution_update", "tool_execution_end"]) assert.ok(ext.handlers.has(event), `${event} handler missing`);
   assert.ok(ext.shortcuts.has("ctrl+shift+g"));
+  assert.equal(ext.markdownTransformers.length, 1);
+  assert.equal(ext.markdownTransformers[0]!("Hello", { messageType: "assistant", isStreaming: true, availableWidth: 80 }), "Hello", "non-TUI sessions must retain native output");
 
   const print = context("print");
   await ext.commands.get("codeui-doctor").handler("", print.ctx);
@@ -108,6 +112,7 @@ test("lifecycle skips non-TUI resources, installs factory widget in TUI, and cle
   assert.ok(tui.themes.includes("codeui-midnight"));
   assert.equal(typeof tui.headers.at(-1), "function");
   assert.equal(typeof tui.footers.at(-1), "function");
+  assert.match(ext.markdownTransformers[0]!("Hello", { messageType: "assistant", isStreaming: true, availableWidth: 80 }), /Pi.*working/);
 
   await ext.handlers.get("session_shutdown")?.({}, tui.ctx);
   assert.ok(tui.widgets.some(([key, value]) => key === "pi-codeui.changes" && value === undefined));

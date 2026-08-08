@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Key } from "@earendil-works/pi-tui";
 import { ActivityTracker } from "./activity.ts";
-import { createChangesWidget } from "./changes-widget.ts";
+import { createChangesWidget, markCodeuiChangesWidget } from "./changes-widget.ts";
 import { chromeContext, createChromeBar } from "./chrome.ts";
 import { getSettingsPaths } from "./config.ts";
 import { openExternalEditor, openExternalQuickfix } from "./external-editor.ts";
@@ -13,7 +13,8 @@ import { DEFAULT_SETTINGS } from "./settings.ts";
 import { SplitPanelController } from "./split-panel.ts";
 import { summarizeSession, type SessionOverview } from "./session.ts";
 import { sanitizeTerminalLine } from "./terminal.ts";
-import { VimEditor } from "./vim-editor.ts";
+import { decorateTranscriptMarkdown } from "./transcript.ts";
+import { promptHint, VimEditor } from "./vim-editor.ts";
 import { WorkspaceStateStore } from "./workspace-state.ts";
 
 export { detectRoot, getDiff, getLineStats, getRepoState, GitCancelledError, GitError, previewUntracked } from "./git/git.ts";
@@ -49,6 +50,8 @@ interface Runtime {
 export default function codeui(pi: ExtensionAPI): void {
   let settings: SettingsController | undefined;
   let runtime: Runtime | undefined;
+
+  pi.registerMarkdownTransformer((markdown, context) => decorateTranscriptMarkdown(markdown, context, runtime?.settings.current.chrome.messageLabels === true));
 
   const clearUI = (ctx: ExtensionContext): void => {
     if (!ctx.hasUI) return;
@@ -121,7 +124,9 @@ export default function codeui(pi: ExtensionAPI): void {
       startMode: active.settings.current.vim.startMode,
       modal,
       label: "PROMPT",
+      hint: promptHint,
       styleMode: (mode, label, focused) => active.ctx.ui.theme.fg(focused ? (modal && mode === "insert" ? "success" : "accent") : "dim", label),
+      styleHint: (_mode, text, focused) => active.ctx.ui.theme.fg(focused ? "muted" : "dim", text),
       styleBorder: (_mode, text) => active.ctx.ui.theme.fg("border", text),
     });
     active.ctx.ui.setEditorComponent(active.vimFactory);
@@ -183,15 +188,14 @@ export default function codeui(pi: ExtensionAPI): void {
         onWorkspaceStateChange: (patch) => active.workspaceStore.update(active.workspaceRoot, patch),
         onAction: (result) => void handleExplorerAction(active, result),
       });
-      active.split.ensure();
       const split = active.split;
       const widget = current.widget.enabled
         ? createChangesWidget(tui, theme, git, () => runtime?.settings.current ?? DEFAULT_SETTINGS)
         : undefined;
-      return {
+      return markCodeuiChangesWidget({
         render: (width: number) => {
           active.split?.ensure();
-          return active.split?.installed ? [] : widget?.render(width) ?? [];
+          return widget?.render(width) ?? [];
         },
         invalidate: () => widget?.invalidate(),
         dispose: () => {
@@ -199,7 +203,7 @@ export default function codeui(pi: ExtensionAPI): void {
           split.dispose();
           if (active.split === split) active.split = undefined;
         },
-      };
+      });
     }, { placement: current.widget.placement });
     active.explorer?.settingsChanged();
     active.split?.settingsChanged();

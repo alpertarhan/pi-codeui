@@ -16,6 +16,7 @@ export interface CodeuiSettings {
     header: boolean;
     footer: boolean;
     editor: boolean;
+    messageLabels: boolean;
   };
   widget: {
     enabled: boolean;
@@ -52,7 +53,7 @@ export const DEFAULT_SETTINGS: Readonly<CodeuiSettings> = Object.freeze({
     fallbackGlyphPreset: "unicode",
     icons: Object.freeze({}),
   }),
-  chrome: Object.freeze({ header: true, footer: true, editor: true }),
+  chrome: Object.freeze({ header: true, footer: true, editor: true, messageLabels: true }),
   widget: Object.freeze({ enabled: true, maxFiles: 4, placement: "aboveEditor" }),
   explorer: Object.freeze({ layout: "split", splitWidth: "34%", overlayWidth: "52%", minOverlayColumns: 100, dockWidgets: true, maxDockRows: 12, diffContext: 3, maxDiffLines: 500 }),
   vim: Object.freeze({ enabled: false, startMode: "insert", externalEditor: Object.freeze(["nvim"]) as unknown as string[] }),
@@ -106,7 +107,7 @@ export function normalizeSettings(raw: unknown, inherited: Readonly<CodeuiSettin
   }
 
   const chrome = section("chrome");
-  reportUnknown(chrome, ["header", "footer", "editor"], "chrome", warnings);
+  reportUnknown(chrome, ["header", "footer", "editor", "messageLabels"], "chrome", warnings);
   const widget = section("widget");
   reportUnknown(widget, ["enabled", "maxFiles", "placement"], "widget", warnings);
   const explorer = section("explorer");
@@ -130,6 +131,7 @@ export function normalizeSettings(raw: unknown, inherited: Readonly<CodeuiSettin
         header: booleanField(chrome, "header", inherited.chrome.header, "chrome", warnings),
         footer: booleanField(chrome, "footer", inherited.chrome.footer, "chrome", warnings),
         editor: booleanField(chrome, "editor", inherited.chrome.editor, "chrome", warnings),
+        messageLabels: booleanField(chrome, "messageLabels", inherited.chrome.messageLabels, "chrome", warnings),
       },
       widget: {
         enabled: booleanField(widget, "enabled", inherited.widget.enabled, "widget", warnings),
