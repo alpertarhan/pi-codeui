@@ -28,7 +28,7 @@ No settings migration is required from 0.13.x:
 - Global settings remain at `~/.pi/agent/codeui.settings.json`.
 - Trusted project settings remain at `<repo>/.pi/codeui.settings.json`.
 - Repository workspace state remains at `~/.pi/agent/codeui.workspace-state.json`.
-- Existing theme, glyph, editor, Git, panel-width, tab, scope, and dock preferences are retained.
+- Existing theme, glyph, editor, Git, panel-width, scope, and dock preferences are retained. Active tabs are now session-local so new conversations open on Session.
 
 The schema URL changes only because of the package rename:
 
@@ -40,7 +40,7 @@ The schema URL changes only because of the package rename:
 
 ## User-visible terminology
 
-The right rail is now called `WORKSPACE`, because it includes Changes, Activity, Checks, Search, and extension widgets. `/codeui` and `Ctrl+Shift+G` focus this rail.
+The right rail is called `WORKSPACE`. Its Session home supports general conversation, while Activity, Changes, Checks, Search, and extension widgets remain available. `/codeui` and `Ctrl+Shift+G` focus this rail.
 
 `TURN` is the active branch's user-turn ordinal, not a token count. Token and context metrics remain separately labeled in the footer.
 

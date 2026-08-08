@@ -73,12 +73,14 @@ test("embedded Explorer supports mouse tabs, scopes, and row selection", async (
     activity: new ActivityTracker("/repo"),
   });
   await settle();
-  assert.equal(explorer.handleMouse(16, 2, 60), true);
+  assert.equal(explorer.handleMouse(47, 0, 60), true);
+  assert.match(stripTerminalSequences(explorer.render(60).join("\n")), /\[CHANGES\]/);
+  assert.equal(explorer.handleMouse(16, 1, 60), true);
   assert.equal(explorer.scope, "staged");
-  explorer.handleMouse(5, 4, 60);
+  explorer.handleMouse(5, 3, 60);
   assert.equal(explorer.selected, 1);
-  explorer.handleMouse(48, 0, 60);
-  assert.match(stripTerminalSequences(explorer.render(60).join("\n")), /ACTIVITY\s+0/);
+  explorer.handleMouse(35, 0, 60);
+  assert.match(stripTerminalSequences(explorer.render(60).join("\n")), /No tool activity yet/);
   explorer.dispose();
 });
 
@@ -102,24 +104,26 @@ test("non-repositories hide Git UI and reveal Changes after git init", async () 
   });
 
   const local = stripTerminalSequences(explorer.render(60).join("\n"));
-  assert.match(local, /ACTIVITY\s+Checks/);
-  assert.doesNotMatch(local, /Changes|CHANGES|WORKING|STAGED|\bDIFF\b|No Git repository|Quickfix|e Open/);
+  assert.match(local, /\[SESSION\]\s+Activity\s+Checks/);
+  assert.match(local, /New conversation/);
+  assert.doesNotMatch(local, /Changes|CHANGES|WORKTREE|STAGED|\bDIFF\b|Git repository|Quickfix|e Open/);
   explorer.handleInput("g");
-  assert.match(notices.at(-1) ?? "", /git init/);
+  assert.match(notices.at(-1) ?? "", /Git repository/);
+  assert.doesNotMatch(notices.at(-1) ?? "", /git init/);
   assert.doesNotMatch(stripTerminalSequences(explorer.render(60).join("\n")), /Changes|CHANGES/);
 
   initialized = true;
   await git.refresh();
   await settle();
   const repository = stripTerminalSequences(explorer.render(60).join("\n"));
-  assert.match(repository, /CHANGES\s+Activity\s+Checks/);
-  assert.match(repository, /WORKSPACE OVERVIEW/);
+  assert.match(repository, /Session\s+Activity\s+\[CHANGES\]\s+Checks/);
+  assert.match(repository, /Working tree clean/);
   explorer.dispose();
   git.dispose();
 });
 
-test("stacked tabs keep list, insight, dock, and footer geometry stable", async () => {
-  const explorer = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, {
+test("empty tabs use one contextual body while preserving outer geometry", async () => {
+  const explorer = new GitExplorer(controller([]), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, {
     embedded: true,
     getTerminalRows: () => 40,
     activity: new ActivityTracker("/repo"),
@@ -127,20 +131,41 @@ test("stacked tabs keep list, insight, dock, and footer geometry stable", async 
   await settle();
 
   const snapshot = () => stripTerminalSequences(explorer.render(60).join("\n")).split("\n");
-  const changes = snapshot();
+  const session = snapshot();
   explorer.handleInput("a");
   const activity = snapshot();
   explorer.handleInput("c");
   const checks = snapshot();
-  const row = (lines: string[], pattern: RegExp) => lines.findIndex((line) => pattern.test(line));
+  explorer.handleInput("g");
+  const changes = snapshot();
 
-  const detailRows = [row(changes, /\bDIFF\s+/), row(activity, /DEVELOPER INSIGHT/), row(checks, /CHECK INSIGHT/)];
-  assert.ok(detailRows.every((index) => index > 0));
-  assert.deepEqual(detailRows, [detailRows[0], detailRows[0], detailRows[0]], "switching tabs must not move the lower insight zone");
-  assert.equal(row(activity, /DEVELOPER INSIGHT/) - row(activity, /ACTIVITY\s+0/), 8, "empty activity must retain the shared list zone");
-  assert.deepEqual([changes.length, activity.length, checks.length], [40, 40, 40]);
-  assert.ok([changes, activity, checks].every((lines) => /q/.test(lines.at(-1) ?? "")), "tab hints must remain anchored to the bottom row");
+  assert.match(session.join("\n"), /New conversation/);
+  assert.match(activity.join("\n"), /No tool activity yet/);
+  assert.match(checks.join("\n"), /NOT RUN/);
+  assert.match(changes.join("\n"), /Working tree clean/);
+  assert.doesNotMatch(changes.at(-1) ?? "", /Stage|Commit|Quickfix|Open/, "clean Changes must not advertise unavailable actions");
+  assert.ok([session, activity, checks, changes].every((lines) => !/DETAILS|\bDIFF\b/.test(lines.join("\n"))), "empty views must not render a second empty detail panel");
+  assert.deepEqual([session.length, activity.length, checks.length, changes.length], [40, 40, 40, 40]);
+  assert.ok([session, activity, checks, changes].every((lines) => /Esc/.test(lines.at(-1) ?? "")), "tab hints must remain anchored to the bottom row");
   explorer.dispose();
+});
+
+test("active view is session-local and can survive a panel remount", async () => {
+  let activeView: "session" | "changes" | "activity" | "checks" = "activity";
+  const explorer = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, {
+    initialView: activeView,
+    onViewChange: (view) => { activeView = view; },
+  });
+  await settle();
+  assert.match(stripTerminalSequences(explorer.render(70).join("\n")), /\[ACTIVITY\]/);
+  explorer.handleInput("c");
+  assert.equal(activeView, "checks");
+  explorer.dispose();
+
+  const remounted = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, { initialView: activeView });
+  await settle();
+  assert.match(stripTerminalSequences(remounted.render(70).join("\n")), /\[CHECKS\]/);
+  remounted.dispose();
 });
 
 test("workspace rail render matrix is width-safe and keeps tab geometry stable", async () => {
@@ -164,22 +189,25 @@ test("workspace rail render matrix is width-safe and keeps tab geometry stable",
     for (const height of heights) {
       rows = height;
       for (const width of widths) {
+        explorer.handleInput("h");
+        const session = explorer.render(width);
         explorer.handleInput("g");
         const changes = explorer.render(width);
         explorer.handleInput("a");
         const activityLines = explorer.render(width);
         explorer.handleInput("c");
         const checkLines = explorer.render(width);
-        const views = [changes, activityLines, checkLines];
+        const views = [session, changes, activityLines, checkLines];
         assert.ok(views.flat().every((line) => visibleWidth(line) <= width), `${glyphPreset} rail exceeded ${width}x${height}`);
-        if (width >= 4) assert.deepEqual(views.map((lines) => lines.length), [height, height, height], `${glyphPreset} row geometry changed at ${width}x${height}`);
+        if (width >= 4) assert.deepEqual(views.map((lines) => lines.length), [height, height, height, height], `${glyphPreset} row geometry changed at ${width}x${height}`);
         if (width >= 24) {
           const detailRow = (lines: string[], pattern: RegExp) => lines.findIndex((line) => pattern.test(stripTerminalSequences(line)));
-          const rowsByView = [detailRow(changes, /\bDIFF\b/), detailRow(activityLines, /DEVELOPER INSIGHT/), detailRow(checkLines, /CHECK INSIGHT/)];
+          const rowsByView = [detailRow(changes, /\bDIFF\b/), detailRow(activityLines, /ACTIVITY DETAILS/), detailRow(checkLines, /CHECK DETAILS/)];
           assert.ok(rowsByView.every((row) => row >= 0), `${glyphPreset} detail disappeared at ${width}x${height}`);
-          assert.deepEqual(rowsByView, [rowsByView[0], rowsByView[0], rowsByView[0]], `${glyphPreset} tab switch moved detail at ${width}x${height}`);
+          assert.deepEqual(rowsByView, [rowsByView[0], rowsByView[0], rowsByView[0]], `${glyphPreset} code tab switch moved detail at ${width}x${height}`);
+          assert.equal(detailRow(session, /DETAILS|\bDIFF\b/), -1, `${glyphPreset} Session must remain a single overview at ${width}x${height}`);
         }
-        if (width >= 80) assert.ok(views.every((lines) => /q/.test(stripTerminalSequences(lines.at(-1) ?? ""))), `footer moved at ${width}x${height}`);
+        if (width >= 80) assert.ok(views.every((lines) => /Esc/.test(stripTerminalSequences(lines.at(-1) ?? ""))), `footer moved at ${width}x${height}`);
       }
     }
 
@@ -212,7 +240,8 @@ test("right-click target opens the selected file action menu", async () => {
     select: async (title) => { menuTitle = title; return "Stage file"; },
   });
   await settle();
-  explorer.handleMouse(5, 3, 60, 1_000, false);
+  explorer.handleInput("g");
+  explorer.handleMouse(5, 2, 60, 1_000, false);
   explorer.openMouseActions();
   await settle();
   assert.match(menuTitle, /both\.ts/);
@@ -227,21 +256,20 @@ test("Explorer restores and publishes repo workspace UI state", async () => {
     embedded: true,
     getTerminalRows: () => 24,
     getDockedWidgets: () => [widget],
-    workspaceState: { view: "checks", scope: "staged", widgetDock: "collapsed" },
+    workspaceState: { scope: "staged", widgetDock: "collapsed" },
     onWorkspaceStateChange: (patch) => patches.push(patch),
   });
   await settle();
   const restored = stripTerminalSequences(explorer.render(70).join("\n"));
   assert.equal(explorer.scope, "staged");
-  assert.match(restored, /CHECKS/);
+  assert.match(restored, /\[SESSION\]/);
   assert.match(restored, /w expand/);
   explorer.handleInput("g");
   explorer.handleInput("\t");
   explorer.handleInput("w");
   assert.deepEqual(patches, [
-    { view: "changes", scope: "staged", widgetDock: "collapsed" },
-    { view: "changes", scope: "working", widgetDock: "collapsed" },
-    { view: "changes", scope: "working", widgetDock: "expanded" },
+    { scope: "working", widgetDock: "collapsed" },
+    { scope: "working", widgetDock: "expanded" },
   ]);
   explorer.dispose();
 });
@@ -272,10 +300,11 @@ test("completed todo widgets auto-compact instead of filling the rail", async ()
     getDockedWidgets: () => [widget],
   });
   await settle();
+  explorer.handleInput("g");
   const compact = stripTerminalSequences(explorer.render(60).join("\n"));
   assert.match(compact, /Todos 24\/24 complete/);
   assert.doesNotMatch(compact, /Old task/);
-  assert.match(compact, /Ready · working tree clean/);
+  assert.match(compact, /Working tree clean/);
   assert.doesNotMatch(compact, /0 actions|Click ↗/);
   explorer.handleInput("w");
   assert.match(stripTerminalSequences(explorer.render(60).join("\n")), /Old task/);
@@ -297,6 +326,7 @@ test("safe Git actions stage, unstage, confirm discard, and guard untracked dele
     notify: (message) => notices.push(message),
   });
   await settle();
+  explorer.handleInput("g");
 
   explorer.handleInput("s");
   await settle();
@@ -352,6 +382,7 @@ test("diff focus navigates and stages only the selected hunk", async () => {
   git.refresh = async () => {};
   const explorer = new GitExplorer(git, exec, () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {});
   await settle();
+  explorer.handleInput("g");
   explorer.handleInput("\r");
   assert.match(stripTerminalSequences(explorer.render(90).join("\n")), /HUNK 1\/2/);
   explorer.handleInput("n");
@@ -395,16 +426,18 @@ test("double-clicking a changed file returns a Neovim action", async () => {
     getTerminalRows: () => 24,
   });
   await settle();
+  explorer.handleInput("g");
   assert.match(stripTerminalSequences(explorer.render(60).join("\n")), /↗/);
-  explorer.handleMouse(5, 3, 60, 1_000);
+  explorer.handleMouse(5, 2, 60, 1_000);
   assert.equal(result, undefined, "first click must preserve diff-preview UX");
-  explorer.handleMouse(5, 3, 60, 1_300);
+  explorer.handleMouse(5, 2, 60, 1_300);
   assert.deepEqual(result, { action: "edit", root: "/repo", path: "both.ts" });
 
   let arrowResult: unknown;
   const arrowExplorer = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, (value) => { arrowResult = value; }, { embedded: true, getTerminalRows: () => 24 });
   await settle();
-  arrowExplorer.handleMouse(58, 3, 60, 2_000);
+  arrowExplorer.handleInput("g");
+  arrowExplorer.handleMouse(58, 2, 60, 2_000);
   assert.deepEqual(arrowResult, { action: "edit", root: "/repo", path: "both.ts" });
 });
 
@@ -412,12 +445,13 @@ test("Explorer returns a safe external-editor action for the selected file", asy
   let result: unknown;
   const explorer = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, (value) => { result = value; });
   await settle();
+  explorer.handleInput("g");
   explorer.handleInput("j");
   explorer.handleInput("e");
   assert.deepEqual(result, { action: "edit", root: "/repo", path: "working.ts" });
 });
 
-test("Explorer shows NOW, newest-touched files, and WHAT/WHY/HOW activity insight", async () => {
+test("Explorer shows active NOW state, newest-touched files, and general activity details", async () => {
   const activity = new ActivityTracker("/repo");
   activity.captureMessage({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "Fixing validation while preserving the API contract." }] } } as any);
   const now = Date.now();
@@ -431,22 +465,25 @@ test("Explorer shows NOW, newest-touched files, and WHAT/WHY/HOW activity insigh
     getTerminalRows: () => 30,
   });
   await settle();
+  explorer.handleInput("g");
   const changes = stripTerminalSequences(explorer.render(70).join("\n"));
-  assert.match(changes, /NOW\s+✓ Editing both\.ts/);
-  assert.match(changes, /WHY\s+Fixing validation/);
+  assert.doesNotMatch(changes, /NOW/, "completed actions must not remain presented as current work");
   assert.ok(changes.indexOf("both.ts") < changes.indexOf("working.ts"));
 
   explorer.handleInput("a");
   const insight = stripTerminalSequences(explorer.render(100).join("\n"));
   assert.match(insight, /ACTIVITY\s+2/);
-  assert.match(insight, /DEVELOPER INSIGHT/);
+  assert.match(insight, /ACTIVITY DETAILS/);
   assert.match(insight, /WHAT[\s\S]*?Editing both\.ts/);
-  assert.match(insight, /WHY[\s\S]*?Fixing validation/);
+  assert.match(insight, /CONTEXT[\s\S]*?Fixing validation/);
   assert.match(insight, /HOW[\s\S]*?1 replacement/);
   assert.match(insight, /RESULT[\s\S]*?Completed in 80ms/);
-  const detail = insight.slice(insight.indexOf("DEVELOPER INSIGHT"));
-  assert.ok(detail.indexOf("WHAT") < detail.indexOf("WHY") && detail.indexOf("WHY") < detail.indexOf("HOW") && detail.indexOf("HOW") < detail.indexOf("RESULT"));
+  const detail = insight.slice(insight.indexOf("ACTIVITY DETAILS"));
+  assert.ok(detail.indexOf("WHAT") < detail.indexOf("CONTEXT") && detail.indexOf("CONTEXT") < detail.indexOf("HOW") && detail.indexOf("HOW") < detail.indexOf("RESULT"));
   assert.match(detail, /✓ DONE/);
+
+  activity.start({ type: "tool_execution_start", toolCallId: "three", toolName: "web_search", args: { query: "terminal UX" } }, Date.now() - 50);
+  assert.match(stripTerminalSequences(explorer.render(100).join("\n")), /NOW\s+● Researching the web/);
   explorer.dispose();
   activity.dispose();
 });
@@ -465,7 +502,7 @@ test("Checks view lists diagnostics and opens Neovim at the exact location", asy
   const checks = stripTerminalSequences(explorer.render(80).join("\n"));
   assert.match(checks, /CHECKS/);
   assert.match(checks, /PROBLEMS\s+1/);
-  assert.match(checks, /CHECK INSIGHT.*✕ ERROR/);
+  assert.match(checks, /CHECK DETAILS.*✕ ERROR/);
   assert.match(checks, /src\/app\.ts:12:5/);
   assert.match(checks, /Wrong type/);
   assert.ok(checks.indexOf("LOCATION") < checks.indexOf("SEVERITY") && checks.indexOf("SEVERITY") < checks.indexOf("SOURCE") && checks.indexOf("SOURCE") < checks.indexOf("MESSAGE") && checks.indexOf("MESSAGE") < checks.indexOf("COMMAND"));
@@ -523,6 +560,36 @@ test("workspace search Enter reveals a changed file without opening it", async (
   explorer.dispose();
 });
 
+test("workspace search finds conversation messages and reveals them in Session", async () => {
+  const session = {
+    title: "UI brainstorming",
+    userTurns: 1,
+    assistantMessages: 1,
+    images: 0,
+    messages: [
+      { id: "user-1", role: "user" as const, text: "Make the workspace adaptive for general chat", timestamp: Date.now() - 1_000 },
+      { id: "assistant-1", role: "assistant" as const, text: "Use a Session-first information architecture", timestamp: Date.now() - 500 },
+    ],
+  };
+  const explorer = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, {
+    getSessionOverview: () => session,
+    getTerminalRows: () => 30,
+  });
+  await settle();
+  assert.match(stripTerminalSequences(explorer.render(80).join("\n")), /UI brainstorming/);
+  explorer.handleInput("/");
+  for (const character of "m: adaptive") explorer.handleInput(character);
+  const search = stripTerminalSequences(explorer.render(100).join("\n"));
+  assert.match(search, /RESULTS\s+1/);
+  assert.match(search, /Make the workspace adaptive/);
+  assert.doesNotMatch(search, /Ctrl\+O Open/, "conversation results have no external file target");
+  explorer.handleInput("\r");
+  const revealed = stripTerminalSequences(explorer.render(80).join("\n"));
+  assert.match(revealed, /MESSAGE · YOU/);
+  assert.match(revealed, /Make the workspace adaptive for general chat/);
+  explorer.dispose();
+});
+
 test("Explorer keys, diff colors/truncation, and renders stay width-safe", async () => {
   const colors: ThemeColor[] = [];
   const settings = cloneSettings(DEFAULT_SETTINGS);
@@ -539,6 +606,7 @@ test("Explorer keys, diff colors/truncation, and renders stay width-safe", async
   git.refresh = async () => { refreshes++; };
   const explorer = new GitExplorer(git, exec, () => settings, fakeTheme(colors), () => renders++, () => { closed = true; });
   await settle();
+  explorer.handleInput("g");
 
   assert.equal(explorer.selected, 0);
   explorer.handleInput("j");
@@ -576,6 +644,7 @@ test("Explorer renders loading, error, empty, and binary diff states", async () 
   const settings = cloneSettings(DEFAULT_SETTINGS);
   const renderWith = async (exec: GitExec, beforeRender?: () => Promise<void>) => {
     const explorer = new GitExplorer(controller(), exec, () => settings, fakeTheme(), () => {}, () => {});
+    explorer.handleInput("g");
     await beforeRender?.();
     const output = explorer.render(60).join("\n");
     explorer.dispose();
@@ -608,6 +677,7 @@ test("Explorer sanitizes malicious paths, diffs, and errors", async () => {
     bold: (text: string) => text,
   } as Theme, () => {}, () => {});
   await settle();
+  explorer.handleInput("g");
   for (const width of [40, 60, 100]) {
     const lines = explorer.render(width);
     assert.ok(lines.every((line) => !/[\r\n\t]/.test(line) && !line.replaceAll("\x1b[0m", "").includes("\x1b")));
@@ -621,6 +691,7 @@ test("Explorer sanitizes malicious paths, diffs, and errors", async () => {
     bold: (text: string) => text,
   } as Theme, () => {}, () => {});
   await settle();
+  errorExplorer.handleInput("g");
   assert.ok(errorExplorer.render(60).every((line) => !/[\r\n\t]/.test(line) && !line.replaceAll("\x1b[0m", "").includes("\x1b")));
   errorExplorer.dispose();
 });
@@ -667,6 +738,7 @@ test("Explorer aborts stale diff loads when selection changes", async () => {
   };
   const explorer = new GitExplorer(controller(), exec, () => settings, fakeTheme(), () => {}, () => {});
   await settle();
+  explorer.handleInput("g");
   explorer.handleInput("j");
   await settle();
   assert.equal(aborted, 1);

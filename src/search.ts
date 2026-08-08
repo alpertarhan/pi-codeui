@@ -1,4 +1,4 @@
-export type SearchKind = "file" | "activity" | "check";
+export type SearchKind = "message" | "file" | "activity" | "check";
 
 export interface SearchDocument<T = unknown> {
   id: string;
@@ -35,10 +35,16 @@ function tokenScore(haystack: string, token: string): number | undefined {
 }
 
 export function parseSearchQuery(query: string): { kind?: SearchKind; text: string } {
-  const match = /^\s*(file|activity|checks?|[fac]):\s*/i.exec(query);
+  const match = /^\s*(messages?|chat|file|activity|checks?|[mfac]):\s*/i.exec(query);
   if (!match) return { text: query.trim() };
   const key = match[1]!.toLowerCase();
-  const kind: SearchKind = key === "f" || key === "file" ? "file" : key === "a" || key === "activity" ? "activity" : "check";
+  const kind: SearchKind = key === "m" || key === "message" || key === "messages" || key === "chat"
+    ? "message"
+    : key === "f" || key === "file"
+      ? "file"
+      : key === "a" || key === "activity"
+        ? "activity"
+        : "check";
   return { kind, text: query.slice(match[0].length).trim() };
 }
 

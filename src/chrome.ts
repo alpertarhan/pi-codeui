@@ -80,6 +80,7 @@ export interface ChromeRenderContext {
   model?: string;
   thinking?: string;
   agentRunning: boolean;
+  sessionTitle?: string;
   usage: UsageSnapshot;
 }
 
@@ -93,14 +94,16 @@ export function renderChromeHeader(
   if (!settings.chrome.header || width <= 0) return [];
   const { icons } = resolveGlyphs(settings);
   const summary = gitSummary(state, settings);
-  const left = `${theme.fg("dim", "PROJECT  ")}${theme.bold(theme.fg("accent", projectName(state, context.cwd)))}`;
   const hasGit = readyState(state)?.kind === "repo";
+  const leftLabel = hasGit ? "PROJECT" : "SESSION";
+  const leftName = hasGit ? projectName(state, context.cwd) : sanitizeTerminalLine(context.sessionTitle ?? "New conversation");
+  const left = `${theme.fg("dim", `${leftLabel}  `)}${theme.bold(theme.fg("accent", leftName))}`;
   const center = hasGit
     ? `${theme.fg("muted", `${icons.branch} ${branchName(state)}`)}${theme.fg("dim", "  ·  ")}${theme.fg(summary.tone, summary.text)}`
     : state.kind === "error"
-      ? `${theme.fg("muted", "LOCAL WORKSPACE")}${theme.fg("error", "  ·  git error")}`
-      : `${theme.fg("muted", "LOCAL")}${theme.fg("dim", "  ·  git init enables Changes")}`;
-  const status = context.agentRunning ? "WORKING" : "READY";
+      ? `${theme.fg("muted", "LOCAL SESSION")}${theme.fg("error", "  ·  git error")}`
+      : theme.fg("muted", "LOCAL CONVERSATION");
+  const status = context.agentRunning ? "ACTIVE" : "READY";
   const right = theme.bold(theme.fg(context.agentRunning ? "warning" : "success", `●  ${status}`));
   return [columns(left, center, right, width), theme.fg("border", "─".repeat(width))];
 }
@@ -113,7 +116,7 @@ export function renderChromeFooter(
   width: number,
 ): string[] {
   if (!settings.chrome.footer || width <= 0) return [];
-  const left = `${theme.fg("dim", "PATH  ")}${pathBreadcrumb(context.cwd, theme)}`;
+  const left = `${theme.fg("dim", "CWD  ")}${pathBreadcrumb(context.cwd, theme)}`;
   const center = renderUsageMetrics(context.usage, theme, width < 160);
   const right = renderModelStatus(context.model, context.thinking, theme, width < 160);
   return [theme.fg("border", "─".repeat(width)), columns(left, center, right, width, 0.27, 0.45)];
@@ -174,12 +177,13 @@ export function renderModelStatus(model: string | undefined, thinking: string | 
   return `${theme.fg("dim", "MODEL  ")}${theme.bold(theme.fg("accent", modelName))}${theme.fg("dim", "   THINK  ")}${theme.bold(theme.fg(thinkingTone, thinkingLabel))}`;
 }
 
-export function chromeContext(ctx: ExtensionContext, agentRunning: boolean): ChromeRenderContext {
+export function chromeContext(ctx: ExtensionContext, agentRunning: boolean, sessionTitle?: string): ChromeRenderContext {
   return {
     cwd: ctx.cwd,
     model: ctx.model?.id,
     thinking: ctx.thinkingLevel,
     agentRunning,
+    sessionTitle,
     usage: calculateUsageSnapshot(ctx.sessionManager, ctx.getContextUsage(), ctx.model?.contextWindow ?? 0),
   };
 }

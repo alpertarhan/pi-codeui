@@ -5,12 +5,13 @@ import { createChangesWidget } from "./changes-widget.ts";
 import { chromeContext, createChromeBar } from "./chrome.ts";
 import { getSettingsPaths } from "./config.ts";
 import { openExternalEditor, openExternalQuickfix } from "./external-editor.ts";
-import { GitExplorer, type GitExplorerResult } from "./git-explorer.ts";
+import { GitExplorer, type ExplorerView, type GitExplorerResult } from "./git-explorer.ts";
 import { GitStateController } from "./git-state.ts";
 import { resolveGlyphs } from "./glyphs.ts";
 import { SettingsController } from "./settings-controller.ts";
 import { DEFAULT_SETTINGS } from "./settings.ts";
 import { SplitPanelController } from "./split-panel.ts";
+import { summarizeSession, type SessionOverview } from "./session.ts";
 import { sanitizeTerminalLine } from "./terminal.ts";
 import { VimEditor } from "./vim-editor.ts";
 import { WorkspaceStateStore } from "./workspace-state.ts";
@@ -40,6 +41,8 @@ interface Runtime {
   editorChrome?: boolean;
   split?: SplitPanelController;
   agentRunning: boolean;
+  session: SessionOverview;
+  workspaceView: ExplorerView;
   requestRender?: () => void;
 }
 
@@ -81,6 +84,21 @@ export default function codeui(pi: ExtensionAPI): void {
     settings = undefined;
     if (previousCtx) clearUI(previousCtx);
     if (ctx && ctx !== previousCtx) clearUI(ctx);
+  };
+
+  const refreshSession = (): void => {
+    if (!runtime) return;
+    runtime.session = summarizeSession(runtime.ctx.sessionManager.getBranch(), runtime.ctx.sessionManager.getSessionName());
+    runtime.requestRender?.();
+  };
+
+  const scheduleSessionRefresh = (): void => {
+    const active = runtime;
+    if (!active) return;
+    const immediate = setImmediate(() => {
+      if (runtime === active) refreshSession();
+    });
+    immediate.unref?.();
   };
 
   const syncVimEditor = (): void => {
@@ -130,7 +148,7 @@ export default function codeui(pi: ExtensionAPI): void {
       const themeResult = ctx.ui.setTheme(current.appearance.theme);
       if (!themeResult.success) ctx.ui.notify(`pi-codeui theme: ${sanitizeTerminalLine(themeResult.error ?? "theme not found")}`, "warning");
     }
-    const context = () => chromeContext(ctx, active.agentRunning);
+    const context = () => chromeContext(ctx, active.agentRunning, active.session.title);
     const publicChrome = (kind: "header" | "footer", tui: Parameters<typeof createChromeBar>[1], theme: Parameters<typeof createChromeBar>[2]) => {
       const bar = createChromeBar(kind, tui, theme, git, () => active.settings.current, context);
       return {
@@ -148,6 +166,10 @@ export default function codeui(pi: ExtensionAPI): void {
       active.split = new SplitPanelController(tui, {
         git,
         activity: active.activity,
+        getSessionOverview: () => active.session,
+        isAgentRunning: () => active.agentRunning,
+        getView: () => active.workspaceView,
+        onViewChange: (view) => { active.workspaceView = view; },
         exec: pi.exec.bind(pi),
         getSettings: () => active.settings.current,
         theme,
@@ -186,7 +208,7 @@ export default function codeui(pi: ExtensionAPI): void {
 
   const openExplorer = async (ctx: ExtensionContext): Promise<void> => {
     if (ctx.mode !== "tui" || !runtime) {
-      if (ctx.hasUI) ctx.ui.notify("CodeUI workspace is available in interactive TUI sessions.", "warning");
+      if (ctx.hasUI) ctx.ui.notify("CodeUI is available in interactive TUI sessions.", "warning");
       return;
     }
     const active = runtime;
@@ -197,8 +219,7 @@ export default function codeui(pi: ExtensionAPI): void {
     await active.git.refresh();
     if (runtime !== active) return;
     if (active.git.state.kind === "error") {
-      ctx.ui.notify(`CodeUI workspace: ${sanitizeTerminalLine(active.git.state.message)}`, "error");
-      return;
+      ctx.ui.notify(`CodeUI Git features: ${sanitizeTerminalLine(active.git.state.message)}`, "warning");
     }
     const explorerSettings = active.settings.current.explorer;
     const wide = (process.stdout.columns ?? 0) >= explorerSettings.minOverlayColumns;
@@ -207,6 +228,10 @@ export default function codeui(pi: ExtensionAPI): void {
       result = await ctx.ui.custom<GitExplorerResult>((tui, theme, _keybindings, done) => {
         const explorer = new GitExplorer(active.git, pi.exec.bind(pi), () => active.settings.current, theme, () => tui.requestRender(), done, {
           activity: active.activity,
+          getSessionOverview: () => active.session,
+          isAgentRunning: () => active.agentRunning,
+          initialView: active.workspaceView,
+          onViewChange: (view) => { active.workspaceView = view; },
           confirm: (title, message) => ctx.ui.confirm(title, message),
           input: (title, placeholder) => ctx.ui.input(title, placeholder),
           select: (title, options) => ctx.ui.select(title, options),
@@ -248,7 +273,8 @@ export default function codeui(pi: ExtensionAPI): void {
       const state = git.state;
       ctx.ui.setStatus(GIT_KEY, state.kind === "error" ? ctx.ui.theme.fg("error", "git error") : undefined);
     });
-    runtime = { settings, git, activity, workspaceStore, workspaceRoot: ctx.cwd, ctx, unsubscribe, agentRunning: false };
+    const session = summarizeSession(ctx.sessionManager.getBranch(), ctx.sessionManager.getSessionName());
+    runtime = { settings, git, activity, workspaceStore, workspaceRoot: ctx.cwd, ctx, unsubscribe, agentRunning: false, session, workspaceView: "session" };
     await git.refresh();
     if (runtime) runtime.workspaceRoot = git.state.kind === "repo" ? git.state.root : ctx.cwd;
     if (workspaceStore.warning) ctx.ui.notify(`pi-codeui workspace state: ${sanitizeTerminalLine(workspaceStore.warning)}`, "warning");
@@ -258,7 +284,15 @@ export default function codeui(pi: ExtensionAPI): void {
   pi.on("session_shutdown", (_event, ctx) => disposeRuntime(ctx));
 
   pi.on("turn_start", () => runtime?.activity.beginTurn());
-  pi.on("message_end", (event) => runtime?.activity.captureMessage(event));
+  pi.on("message_end", (event) => {
+    runtime?.activity.captureMessage(event);
+    if (event.message.role !== "user" && event.message.role !== "assistant") return;
+    // Pi persists message_end after extension handlers return.
+    scheduleSessionRefresh();
+  });
+  pi.on("session_info_changed", refreshSession);
+  pi.on("session_compact", refreshSession);
+  pi.on("session_tree", refreshSession);
   pi.on("tool_execution_start", (event) => runtime?.activity.start(event));
   pi.on("tool_execution_update", (event) => runtime?.activity.update(event));
   pi.on("tool_execution_end", (event) => runtime?.activity.end(event));
@@ -279,11 +313,11 @@ export default function codeui(pi: ExtensionAPI): void {
   pi.on("agent_settled", () => runtime?.git.schedule());
 
   pi.registerCommand("codeui", {
-    description: "Open the CodeUI developer workspace",
+    description: "Open the CodeUI workspace",
     handler: async (_args, ctx) => openExplorer(ctx),
   });
   pi.registerShortcut(Key.ctrlShift("g"), {
-    description: "Focus the CodeUI developer workspace",
+    description: "Focus the CodeUI workspace",
     handler: openExplorer,
   });
   pi.registerCommand("codeui-reset-workspace", {
@@ -296,7 +330,7 @@ export default function codeui(pi: ExtensionAPI): void {
       runtime.workspaceStore.clear(runtime.workspaceRoot);
       runtime.workspaceStore.flushSync();
       installWidget();
-      ctx.ui.notify("Reset saved CodeUI width, tab, scope, and widget dock state for this repository.", "info");
+      ctx.ui.notify("Reset saved CodeUI width, scope, and widget dock state for this workspace.", "info");
     },
   });
 

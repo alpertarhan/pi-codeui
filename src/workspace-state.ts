@@ -6,13 +6,11 @@ export const WORKSPACE_STATE_FILE_NAME = "codeui.workspace-state.json";
 const VERSION = 1;
 const MAX_WORKSPACES = 100;
 
-export type PersistedExplorerView = "changes" | "activity" | "checks";
 export type PersistedExplorerScope = "working" | "staged";
 export type PersistedWidgetDock = "auto" | "collapsed" | "expanded";
 
 export interface WorkspaceUiState {
   panelWidthPercent?: number;
-  view?: PersistedExplorerView;
   scope?: PersistedExplorerScope;
   widgetDock?: PersistedWidgetDock;
 }
@@ -31,7 +29,6 @@ function normalizeWorkspace(value: unknown): StoredWorkspace | undefined {
     : undefined;
   return {
     ...(panelWidthPercent === undefined ? {} : { panelWidthPercent }),
-    ...(oneOf(raw.view, ["changes", "activity", "checks"] as const) ? { view: oneOf(raw.view, ["changes", "activity", "checks"] as const) } : {}),
     ...(oneOf(raw.scope, ["working", "staged"] as const) ? { scope: oneOf(raw.scope, ["working", "staged"] as const) } : {}),
     ...(oneOf(raw.widgetDock, ["auto", "collapsed", "expanded"] as const) ? { widgetDock: oneOf(raw.widgetDock, ["auto", "collapsed", "expanded"] as const) } : {}),
     updatedAt: typeof raw.updatedAt === "number" && Number.isFinite(raw.updatedAt) ? raw.updatedAt : 0,

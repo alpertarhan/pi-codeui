@@ -2,12 +2,12 @@
 
 ## 1. Product goal
 
-`pi-codeui` is a Pi Coding Agent extension package that adds a Git-aware, keyboard-first terminal UI without replacing Pi's conversation flow.
+`pi-codeui` is a Pi Coding Agent extension package that adds a conversation-first, code-aware, keyboard-first terminal UI without replacing Pi's conversation flow.
 
-The selected experience is an integrated developer workspace:
+The selected experience is an integrated terminal workspace:
 
-- project-aware global chrome and a bordered, focus-aware prompt;
-- a persistent, resizable right rail for Changes, Activity, Checks, Search, and extension widgets;
+- project/session-aware global chrome and a bordered, focus-aware prompt;
+- a persistent, resizable right rail with a session-local Session home plus Activity, Changes, Checks, Search, and extension widgets;
 - safe file/hunk stage, unstage, discard, and commit flows;
 - an optional minimal Vim mode for Pi's prompt editor;
 - real Neovim integration by suspending Pi's TUI, opening `nvim`, then restoring Pi.
@@ -34,6 +34,8 @@ Important limits:
 5. Terminal applications cannot portably change the host terminal's font family or toggle ligatures. Ghostty, Kitty, WezTerm, iTerm2, and similar hosts own those settings; this extension controls glyph/icon presets and validates fallbacks.
 
 ## 3. UX specification
+
+New conversations start on a single-body Session overview. It derives its title and counts from Pi's existing session entries without a second LLM summary, lists only reliable image/file resources, and keeps code-specific surfaces available without making them the default. Empty Activity, Changes, and Checks views also use one contextual body; Checks distinguishes never-run, running, clear, and failed states. The active tab is session-local, while width, Git scope, and dock preferences remain workspace-persistent.
 
 ### 3.1 Persistent widget
 

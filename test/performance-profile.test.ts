@@ -64,6 +64,7 @@ test("large workspace render, diff, activity, diagnostics, and search stay bound
     return { stdout: diff, stderr: "", code: 0, killed: false };
   }, () => settings, theme, () => {}, () => {}, { embedded: true, getTerminalRows: () => 40, activity });
   await settle();
+  explorer.handleInput("g");
   const setupTiming = elapsed(start);
 
   const diffStart = performance.now();

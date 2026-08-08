@@ -13,9 +13,10 @@ const HStack = PiTuiRuntime.HStack;
 const VStack = PiTuiRuntime.VStack;
 import type { ActivityTracker } from "./activity.ts";
 import type { GitExec } from "./git/git.ts";
-import { GitExplorer, type GitExplorerResult } from "./git-explorer.ts";
+import { GitExplorer, type ExplorerView, type GitExplorerResult } from "./git-explorer.ts";
 import type { GitStateController } from "./git-state.ts";
 import type { CodeuiSettings } from "./settings.ts";
+import type { SessionOverview } from "./session.ts";
 import type { WorkspaceUiState } from "./workspace-state.ts";
 
 type InternalViewportTui = ViewportTUI & {
@@ -54,6 +55,10 @@ export function extractExtensionWidgetDock(root: Component): { mainRoot: Compone
 export interface SplitPanelOptions {
   git: GitStateController;
   activity?: ActivityTracker;
+  getSessionOverview?: () => Readonly<SessionOverview>;
+  isAgentRunning?: () => boolean;
+  getView?: () => ExplorerView;
+  onViewChange?: (view: ExplorerView) => void;
   exec: GitExec;
   getSettings: () => Readonly<CodeuiSettings>;
   theme: Theme;
@@ -337,6 +342,10 @@ export class SplitPanelController {
         workspaceState: this.options.workspaceState,
         onWorkspaceStateChange: this.options.onWorkspaceStateChange,
         activity: this.options.activity,
+        getSessionOverview: this.options.getSessionOverview,
+        isAgentRunning: this.options.isAgentRunning,
+        initialView: this.options.getView?.(),
+        onViewChange: this.options.onViewChange,
       },
     );
   }

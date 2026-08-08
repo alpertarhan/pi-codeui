@@ -9,7 +9,7 @@ import type { FileChange } from "./git/types.ts";
 import { sanitizeTerminalLine } from "./terminal.ts";
 
 export type ActivityStatus = "running" | "success" | "error";
-export type ActivityKind = "read" | "edit" | "write" | "bash" | "test" | "build" | "lint" | "search" | "other";
+export type ActivityKind = "read" | "edit" | "write" | "bash" | "test" | "build" | "lint" | "search" | "research" | "export" | "decision" | "other";
 
 export interface Diagnostic {
   id: string;
@@ -129,7 +129,7 @@ export class ActivityTracker {
   private readonly listeners = new Set<ActivityListener>();
   private readonly history: ActivityRecord[] = [];
   private readonly touchedAt = new Map<string, number>();
-  private narrative = "Waiting for the next AI action";
+  private narrative = "Waiting for the next action";
   private revision = 0;
   private disposed = false;
 
@@ -150,13 +150,23 @@ export class ActivityTracker {
     return this.history.find((record) => record.status === "running") ?? this.history[0];
   }
 
+  get checks(): readonly ActivityRecord[] {
+    const seen = new Set<string>();
+    return this.history.filter((record) => {
+      const key = `${record.kind}:${record.how}`;
+      if (!validationKinds.has(record.kind) || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
   get diagnostics(): readonly Diagnostic[] {
-    const seenChecks = new Set<string>();
+    const seen = new Set<string>();
     const current: Diagnostic[] = [];
     for (const record of this.history) {
-      const checkKey = `${record.kind}:${record.how}`;
-      if (!validationKinds.has(record.kind) || record.status === "running" || seenChecks.has(checkKey)) continue;
-      seenChecks.add(checkKey);
+      const key = `${record.kind}:${record.how}`;
+      if (!validationKinds.has(record.kind) || record.status === "running" || seen.has(key)) continue;
+      seen.add(key);
       current.push(...(record.diagnostics ?? []));
     }
     return current.slice(0, 100);
@@ -168,7 +178,7 @@ export class ActivityTracker {
   }
 
   beginTurn(): void {
-    this.narrative = "Understanding the requested change";
+    this.narrative = "Understanding your request";
     this.emit();
   }
 
@@ -292,7 +302,16 @@ export class ActivityTracker {
       return { kind: "bash", what: `Running ${command || "a shell command"}`, how: `Shell execution${timeout}` };
     }
     if (toolName === "grep" || toolName === "find" || toolName === "ls") {
-      return { kind: "search", what: `${toolName === "grep" ? "Searching code" : toolName === "find" ? "Finding files" : "Listing files"}`, how: compact(JSON.stringify(args), 140) };
+      return { kind: "search", what: `${toolName === "grep" ? "Searching content" : toolName === "find" ? "Finding files" : "Listing files"}`, how: compact(JSON.stringify(args), 140) };
+    }
+    if (/web_(?:search|fetch)|search_web|fetch_url/.test(toolName)) {
+      return { kind: "research", what: /fetch|url/.test(toolName) ? "Reading a web source" : "Researching the web", how: compact(JSON.stringify(args), 140) || "Web research" };
+    }
+    if (/preview_export|export/.test(toolName)) {
+      return { kind: "export", what: "Exporting an artifact", how: compact(JSON.stringify(args), 140) || "Artifact export" };
+    }
+    if (/ask_user|question/.test(toolName)) {
+      return { kind: "decision", what: "Requesting a decision", how: compact(JSON.stringify(args), 140) || "User input" };
     }
     return { kind: "other", what: `Using ${compact(toolName, 60)}`, how: compact(JSON.stringify(args), 140) || "Tool execution" };
   }

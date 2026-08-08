@@ -1,7 +1,7 @@
 {
   "name": "pi-codeui",
   "version": "1.0.0-rc.4",
-  "description": "Git-aware developer workspace for Pi Coding Agent",
+  "description": "Conversation-first, code-aware terminal workspace for Pi Coding Agent",
   "type": "module",
   "license": "MIT",
   "author": "Alper Tarhan",
@@ -34,6 +34,7 @@
     "pi-coding-agent",
     "terminal-ui",
     "developer-tools",
+    "chat",
     "git",
     "tui"
   ],

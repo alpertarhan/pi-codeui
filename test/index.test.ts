@@ -43,6 +43,10 @@ function context(mode: string, overrides: Record<string, unknown> = {}) {
   const ctx = {
     cwd: process.cwd(), mode, hasUI: mode === "tui" || mode === "rpc",
     isProjectTrusted: () => false,
+    sessionManager: {
+      getBranch: () => [],
+      getSessionName: () => undefined,
+    },
     ui: {
       theme,
       setTheme: (name: string) => { themes.push(name); return { success: true }; },
@@ -72,7 +76,7 @@ function context(mode: string, overrides: Record<string, unknown> = {}) {
 test("commands and shortcut register; doctor is safe outside TUI", async () => {
   const ext = extension();
   assert.deepEqual([...ext.commands.keys()], ["codeui", "codeui-reset-workspace", "codeui-refresh", "codeui-vim", "codeui-doctor"]);
-  for (const event of ["turn_start", "message_end", "tool_execution_start", "tool_execution_update", "tool_execution_end"]) assert.ok(ext.handlers.has(event), `${event} handler missing`);
+  for (const event of ["turn_start", "message_end", "session_info_changed", "session_compact", "session_tree", "tool_execution_start", "tool_execution_update", "tool_execution_end"]) assert.ok(ext.handlers.has(event), `${event} handler missing`);
   assert.ok(ext.shortcuts.has("ctrl+shift+g"));
 
   const print = context("print");

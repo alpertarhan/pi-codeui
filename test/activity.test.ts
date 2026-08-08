@@ -48,6 +48,15 @@ test("developer commands are classified as tests, builds, and validation", () =>
   assert.equal(tracker.records.find((record) => record.id === "build")?.kind, "build");
 });
 
+test("general chat tools use human activity labels", () => {
+  const tracker = new ActivityTracker("/repo");
+  tracker.start({ type: "tool_execution_start", toolCallId: "web", toolName: "web_search", args: { query: "terminal UX" } }, 1);
+  tracker.start({ type: "tool_execution_start", toolCallId: "export", toolName: "preview_export", args: { format: "pdf" } }, 2);
+  tracker.start({ type: "tool_execution_start", toolCallId: "decision", toolName: "ask_user_question", args: {} }, 3);
+  assert.deepEqual(tracker.records.map(({ kind }) => kind), ["decision", "export", "research"]);
+  assert.match(tracker.records.find((record) => record.id === "web")?.what ?? "", /web/i);
+});
+
 test("diagnostics parse common TypeScript, ESLint, and test locations safely", () => {
   const output = [
     "src/app.ts(12,5): error TS2322: Type string is not assignable",
@@ -70,6 +79,8 @@ test("latest successful check clears older diagnostics of the same kind", () => 
   tracker.end({ type: "tool_execution_end", toolCallId: "lint-1", toolName: "bash", result: { content: [{ type: "text", text: "src/a.ts(2,3): error TS1: broken" }] }, isError: true }, 2);
   assert.equal(tracker.diagnostics.length, 1);
   tracker.start({ type: "tool_execution_start", toolCallId: "lint-2", toolName: "bash", args: { command: "npm run typecheck" } }, 3);
+  assert.equal(tracker.checks[0]?.status, "running");
+  assert.equal(tracker.diagnostics.length, 1, "the last known diagnostics stay visible while the same check reruns");
   tracker.end({ type: "tool_execution_end", toolCallId: "lint-2", toolName: "bash", result: { content: [{ type: "text", text: "Typecheck passed" }] }, isError: false }, 4);
   assert.equal(tracker.diagnostics.length, 0);
 });

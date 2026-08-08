@@ -47,7 +47,7 @@ test("global chrome matches the mockup hierarchy and stays width-safe", async ()
   assert.match(header[0] ?? "", /feature\/ui/);
   assert.match(header[0] ?? "", /1 changed  \+16 -4/);
   assert.match(header[0] ?? "", /READY/);
-  assert.match(footer[1] ?? "", /PATH  ~\/dev\/pi\/pi-codeui/);
+  assert.match(footer[1] ?? "", /CWD  ~\/dev\/pi\/pi-codeui/);
   assert.match(footer[1] ?? "", /IN 904k/);
   assert.match(footer[1] ?? "", /#7/);
   assert.doesNotMatch(footer[1] ?? "", /#22k|#62k/, "TURN must be an ordinal, not a token count");
@@ -73,9 +73,9 @@ test("global chrome matches the mockup hierarchy and stays width-safe", async ()
   assert.match(semanticFooter, /\[muted\]~\/dev\/pi\/\[text\]pi-codeui/, "the active directory must be stronger than its parent path");
 
   const localHeader = renderChromeHeader({ kind: "none" }, settings, theme, context, 120).join("\n");
-  assert.match(localHeader, /LOCAL/);
-  assert.match(localHeader, /git init enables Changes/);
-  assert.doesNotMatch(localHeader, /no git|git idle/, "non-repositories should not render fake Git state");
+  assert.match(localHeader, /SESSION  New conversation/);
+  assert.match(localHeader, /LOCAL CONVERSATION/);
+  assert.doesNotMatch(localHeader, /git init|no git|git idle/, "general chat must not advertise missing Git state");
 
   settings.chrome.header = false;
   settings.chrome.footer = false;
@@ -115,7 +115,7 @@ test("chrome render matrix is width-safe and preserves textual state across glyp
   const settings = cloneSettings(DEFAULT_SETTINGS);
   const errorHeader = renderChromeHeader({ kind: "error", message: "failed" }, settings, theme, context, 100).join("\n");
   assert.match(errorHeader, /git error/);
-  assert.match(errorHeader, /WORKING/);
+  assert.match(errorHeader, /ACTIVE/);
   assert.match(renderUsageMetrics(context.usage, theme, true), /CTX 92%/, "critical context must be textually identifiable without color");
   git.dispose();
 });
