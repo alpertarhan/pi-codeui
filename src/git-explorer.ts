@@ -126,7 +126,7 @@ export class GitExplorer implements Focusable {
   private searchSelected = 0;
   private searchStart = 0;
   private searchCache: { query: string; gitState: GitStateController["state"]; activityVersion: number; showUntracked: boolean; results: RankedSearchDocument<WorkspaceSearchValue>[] } | undefined;
-  private diffDisplayCache: { text: string; lines: DisplayDiffLine[] } | undefined;
+  private diffDisplayCache: { text: string; lines: DisplayDiffLine[]; hunkLines: Map<number, number> } | undefined;
   private hunkCache: { text: string; hunks: PatchHunk[] } | undefined;
   private hunkSelected = 0;
   private lastMouseClick: { view: ExplorerView | "search"; index: number; at: number } | undefined;
@@ -712,7 +712,12 @@ export class GitExplorer implements Focusable {
   private displayDiffLines(text: string): DisplayDiffLine[] {
     if (this.diffDisplayCache?.text === text) return this.diffDisplayCache.lines;
     const lines = formatUnifiedDiff(text);
-    this.diffDisplayCache = { text, lines };
+    const hunkLines = new Map<number, number>();
+    let hunkIndex = 0;
+    for (let index = 0; index < lines.length; index++) {
+      if (lines[index]?.text.trimStart().startsWith("@@")) hunkLines.set(index, hunkIndex++);
+    }
+    this.diffDisplayCache = { text, lines, hunkLines };
     return lines;
   }
 
@@ -1316,14 +1321,10 @@ export class GitExplorer implements Focusable {
       const source = this.diff.text ? this.displayDiffLines(this.diff.text) : [{ text: "No textual changes", color: "toolDiffContext" as const }];
       const maxScroll = Math.max(0, source.length - bodyHeight + (this.diff.truncated ? 1 : 0));
       this.diffScroll = Math.max(0, Math.min(this.diffScroll, maxScroll));
-      const hunkLines = new Map<number, number>();
-      let hunkIndex = 0;
-      for (let index = 0; index < source.length; index++) {
-        if (source[index]?.text.trimStart().startsWith("@@")) hunkLines.set(index, hunkIndex++);
-      }
+      const hunkLines = this.diffDisplayCache?.text === this.diff.text ? this.diffDisplayCache.hunkLines : undefined;
       for (let index = this.diffScroll; index < Math.min(source.length, this.diffScroll + bodyHeight); index++) {
         const line = source[index]!;
-        const selectedHunk = hunkLines.get(index) === this.hunkSelected;
+        const selectedHunk = hunkLines?.get(index) === this.hunkSelected;
         const rendered = this.theme.fg(line.color, selectedHunk ? `▶ HUNK ${this.hunkSelected + 1}/${hunks.length}  ${line.text.trimStart()}` : line.text);
         lines.push(selectedHunk ? this.theme.bg("selectedBg", fit(rendered, width)) : rendered);
       }
@@ -1373,7 +1374,7 @@ export class GitExplorer implements Focusable {
 
   private scrollDiff(delta: number): void {
     if (this.diff.kind !== "ready" || this.diff.binary) return;
-    const count = this.diff.text ? formatUnifiedDiff(this.diff.text).length : 0;
+    const count = this.diff.text ? this.displayDiffLines(this.diff.text).length : 0;
     this.diffScroll = Math.max(0, Math.min(this.diffScroll + delta, Math.max(0, count - 1)));
     this.requestRender();
   }
