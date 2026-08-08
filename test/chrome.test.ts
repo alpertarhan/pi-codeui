@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { renderChromeFooter, renderChromeHeader, renderModelStatus } from "../src/chrome.ts";
+import { renderChromeFooter, renderChromeHeader, renderModelStatus, renderUsageMetrics } from "../src/chrome.ts";
 import type { GitExec } from "../src/git/git.ts";
 import { GitStateController } from "../src/git-state.ts";
 import { cloneSettings, DEFAULT_SETTINGS } from "../src/settings.ts";
@@ -71,14 +71,45 @@ test("global chrome matches the mockup hierarchy and stays width-safe", async ()
   const semanticFooter = renderChromeFooter(git.state, settings, semanticTheme, context, 240).join("\n");
   assert.match(semanticFooter, /\[muted\]~\/dev\/pi\/\[text\]pi-codeui/, "the active directory must be stronger than its parent path");
 
-  for (const width of [24, 40, 80]) {
-    assert.ok([...renderChromeHeader(git.state, settings, theme, context, width), ...renderChromeFooter(git.state, settings, theme, context, width)]
-      .every((line) => visibleWidth(line) <= width));
-  }
-
   settings.chrome.header = false;
   settings.chrome.footer = false;
   assert.deepEqual(renderChromeHeader(git.state, settings, theme, context, 80), []);
   assert.deepEqual(renderChromeFooter(git.state, settings, theme, context, 80), []);
+  git.dispose();
+});
+
+test("chrome render matrix is width-safe and preserves textual state across glyph presets", async () => {
+  const git = new GitStateController(exec, "/repo");
+  await git.refresh();
+  const context = {
+    cwd: "/Users/alper/dev/pi/pi-codeui",
+    model: "gpt-5.3-codex",
+    thinking: "high",
+    agentRunning: true,
+    usage: {
+      session: { input: 904_000, output: 107_000, cacheRead: 0, cacheWrite: 0, cached: 0, total: 1_011_000 },
+      turnNumber: 7,
+      contextTokens: 250_000,
+      contextWindow: 272_000,
+      contextPercent: 92,
+    },
+  };
+  const widths = [1, 2, 3, 4, 12, 24, 40, 79, 80, 89, 90, 100, 140, 159, 160, 200, 220];
+
+  for (const glyphPreset of ["nerd", "unicode", "ascii"] as const) {
+    const settings = cloneSettings(DEFAULT_SETTINGS);
+    settings.appearance.glyphPreset = glyphPreset;
+    for (const width of widths) {
+      const lines = [...renderChromeHeader(git.state, settings, theme, context, width), ...renderChromeFooter(git.state, settings, theme, context, width)];
+      assert.equal(lines.length, 4, `${glyphPreset} chrome geometry changed at ${width} columns`);
+      assert.ok(lines.every((line) => visibleWidth(line) === width), `${glyphPreset} chrome exceeded ${width} columns`);
+    }
+  }
+
+  const settings = cloneSettings(DEFAULT_SETTINGS);
+  const errorHeader = renderChromeHeader({ kind: "error", message: "failed" }, settings, theme, context, 100).join("\n");
+  assert.match(errorHeader, /git error/);
+  assert.match(errorHeader, /WORKING/);
+  assert.match(renderUsageMetrics(context.usage, theme, true), /CTX 92%/, "critical context must be textually identifiable without color");
   git.dispose();
 });

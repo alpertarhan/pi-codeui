@@ -7,6 +7,7 @@ import { ActivityTracker } from "../src/activity.ts";
 import { filesForScope, formatUnifiedDiff, GitExplorer } from "../src/git-explorer.ts";
 import type { GitExec } from "../src/git/git.ts";
 import { GitStateController } from "../src/git-state.ts";
+import { GLYPH_PRESETS } from "../src/glyphs.ts";
 import type { FileChange } from "../src/git/types.ts";
 import { cloneSettings, DEFAULT_SETTINGS } from "../src/settings.ts";
 
@@ -104,6 +105,61 @@ test("stacked tabs keep list, insight, dock, and footer geometry stable", async 
   assert.deepEqual([changes.length, activity.length, checks.length], [40, 40, 40]);
   assert.ok([changes, activity, checks].every((lines) => /q/.test(lines.at(-1) ?? "")), "tab hints must remain anchored to the bottom row");
   explorer.dispose();
+});
+
+test("workspace rail render matrix is width-safe and keeps tab geometry stable", async () => {
+  const widths = [1, 3, 4, 12, 24, 40, 79, 80, 89, 90, 100, 140, 160, 200, 220];
+  const heights = [5, 8, 12, 24, 40, 60];
+
+  for (const glyphPreset of ["nerd", "unicode", "ascii"] as const) {
+    const settings = cloneSettings(DEFAULT_SETTINGS);
+    settings.appearance.glyphPreset = glyphPreset;
+    const activity = new ActivityTracker("/repo");
+    activity.start({ type: "tool_execution_start", toolCallId: "matrix-check", toolName: "bash", args: { command: "npm run typecheck" } }, 1);
+    activity.end({ type: "tool_execution_end", toolCallId: "matrix-check", toolName: "bash", result: { content: [{ type: "text", text: "src/app.ts(12,5): error TS2322: Wrong type" }] }, isError: true }, 20);
+    let rows = 24;
+    const explorer = new GitExplorer(controller(), async () => ({ stdout: "@@ -1 +1 @@\n-old\n+new", stderr: "", code: 0, killed: false }), () => settings, fakeTheme(), () => {}, () => {}, {
+      embedded: true,
+      getTerminalRows: () => rows,
+      activity,
+    });
+    await settle();
+
+    for (const height of heights) {
+      rows = height;
+      for (const width of widths) {
+        explorer.handleInput("g");
+        const changes = explorer.render(width);
+        explorer.handleInput("a");
+        const activityLines = explorer.render(width);
+        explorer.handleInput("c");
+        const checkLines = explorer.render(width);
+        const views = [changes, activityLines, checkLines];
+        assert.ok(views.flat().every((line) => visibleWidth(line) <= width), `${glyphPreset} rail exceeded ${width}x${height}`);
+        if (width >= 4) assert.deepEqual(views.map((lines) => lines.length), [height, height, height], `${glyphPreset} row geometry changed at ${width}x${height}`);
+        if (width >= 24) {
+          const detailRow = (lines: string[], pattern: RegExp) => lines.findIndex((line) => pattern.test(stripTerminalSequences(line)));
+          const rowsByView = [detailRow(changes, /\bDIFF\b/), detailRow(activityLines, /DEVELOPER INSIGHT/), detailRow(checkLines, /CHECK INSIGHT/)];
+          assert.ok(rowsByView.every((row) => row >= 0), `${glyphPreset} detail disappeared at ${width}x${height}`);
+          assert.deepEqual(rowsByView, [rowsByView[0], rowsByView[0], rowsByView[0]], `${glyphPreset} tab switch moved detail at ${width}x${height}`);
+        }
+        if (width >= 80) assert.ok(views.every((lines) => /q/.test(stripTerminalSequences(lines.at(-1) ?? ""))), `footer moved at ${width}x${height}`);
+      }
+    }
+
+    rows = 24;
+    explorer.handleInput("g");
+    const changes = stripTerminalSequences(explorer.render(80).join("\n"));
+    assert.ok(changes.includes(`M ${GLYPH_PRESETS[glyphPreset].modified} both.ts`), `${glyphPreset} modified glyph was not rendered`);
+    assert.match(changes, /! ! conflict\.ts/, "conflicts must retain a non-color status marker");
+    explorer.handleInput("c");
+    const checks = stripTerminalSequences(explorer.render(100).join("\n"));
+    assert.match(checks, /1 errors/);
+    assert.match(checks, /✕/);
+    assert.match(checks, /SEVERITY\s+ERROR/, "check severity must remain textual without color");
+    explorer.dispose();
+    activity.dispose();
+  }
 });
 
 test("right-click target opens the selected file action menu", async () => {
