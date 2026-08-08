@@ -2,7 +2,7 @@
 
 ## 1. Product goal
 
-`@pi-codeui/core` is a Pi Coding Agent extension package that adds a Git-aware, keyboard-first terminal UI without replacing Pi's conversation flow.
+`pi-codeui` is a Pi Coding Agent extension package that adds a Git-aware, keyboard-first terminal UI without replacing Pi's conversation flow.
 
 The selected experience is hybrid:
 
@@ -242,7 +242,7 @@ Proposed schema:
 
 ```json
 {
-  "$schema": "https://unpkg.com/@pi-codeui/core/schemas/codeui.settings.schema.json",
+  "$schema": "https://unpkg.com/pi-codeui/schemas/codeui.settings.schema.json",
   "appearance": {
     "theme": "codeui-midnight",
     "density": "compact",
@@ -379,11 +379,11 @@ Deliverables:
 - config merge/validation;
 - `/codeui-settings` and `/codeui-doctor`;
 - optional bundled themes;
-- npm/git installation for `@pi-codeui/core`;
+- npm/git installation for `pi-codeui`;
 - screenshots/video and package-gallery metadata;
 - compatibility matrix for Kitty, Ghostty, WezTerm, iTerm2, and narrow terminals.
 
-Acceptance: `pi install npm:@pi-codeui/core` loads the extension, bundled themes, and schemas without manual copying.
+Acceptance: `pi install npm:pi-codeui` loads the extension, bundled themes, and schemas without manual copying.
 
 ## 9. Verification strategy
 

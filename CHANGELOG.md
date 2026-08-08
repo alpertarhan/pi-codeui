@@ -1,10 +1,14 @@
 # Changelog
 
-All notable changes to `@pi-codeui/core` are documented here. The project follows semantic versioning after the 1.0 release.
+All notable changes to `pi-codeui` are documented here. The project follows semantic versioning after the 1.0 release.
 
 ## Unreleased
 
-- v1.0 compatibility and manual terminal-matrix validation.
+- Add deterministic terminal, viewport, Nerd Font/Unicode/ASCII, and non-color accessibility matrices.
+- Profile large repositories, diffs, Activity/diagnostics, and fuzzy search; cache repeated diff hunk indexing.
+- Validate the configured Pi extension matrix and harden identity-safe adoption of externally replaced layouts.
+- Rename the unpublished pre-1.0 package from `@pi-codeui/core` to the canonical `pi-codeui` npm/GitHub identity.
+- Add v1 migration, compatibility, and release documentation.
 
 ## 0.13.2
 

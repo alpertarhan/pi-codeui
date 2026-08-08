@@ -1,9 +1,18 @@
 {
-  "name": "@pi-codeui/core",
+  "name": "pi-codeui",
   "version": "0.13.2",
-  "description": "Git-aware, keyboard-first terminal UI for Pi Coding Agent",
+  "description": "Git-aware developer workspace for Pi Coding Agent",
   "type": "module",
   "license": "MIT",
+  "author": "Alper Tarhan",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alpertarhan/pi-codeui.git"
+  },
+  "homepage": "https://github.com/alpertarhan/pi-codeui#readme",
+  "bugs": {
+    "url": "https://github.com/alpertarhan/pi-codeui/issues"
+  },
   "publishConfig": {
     "access": "public"
   },
@@ -13,13 +22,20 @@
     "themes",
     "docs/terminal-profiles.md",
     "docs/COMPATIBILITY.md",
+    "docs/MIGRATION-v1.md",
+    "docs/RELEASING.md",
     "docs/mockups/pi-codeui-terminal.png",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"
   ],
   "keywords": [
-    "pi-package"
+    "pi-package",
+    "pi-coding-agent",
+    "terminal-ui",
+    "developer-tools",
+    "git",
+    "tui"
   ],
   "engines": {
     "node": ">=22.19.0"
@@ -36,7 +52,8 @@
     ],
     "themes": [
       "./themes/codeui-midnight.json"
-    ]
+    ],
+    "image": "https://raw.githubusercontent.com/alpertarhan/pi-codeui/main/docs/mockups/pi-codeui-terminal.png"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "^0.84.0",

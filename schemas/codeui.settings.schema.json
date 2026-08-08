@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://unpkg.com/@pi-codeui/core/schemas/codeui.settings.schema.json",
+  "$id": "https://unpkg.com/pi-codeui/schemas/codeui.settings.schema.json",
   "title": "pi-codeui settings",
   "type": "object",
   "additionalProperties": false,

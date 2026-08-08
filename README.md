@@ -1,4 +1,4 @@
-# @pi-codeui/core
+# pi-codeui
 
 A Git-aware, keyboard-first [Pi Coding Agent](https://pi.dev) developer workspace with safe Git actions, diagnostics, search, persistent layout, and Vim/Neovim integration.
 
@@ -8,7 +8,10 @@ A Git-aware, keyboard-first [Pi Coding Agent](https://pi.dev) developer workspac
 - Pi Coding Agent 0.84.x
 
 ```sh
-pi install npm:@pi-codeui/core
+pi install npm:pi-codeui
+
+# Before the npm release, install directly from GitHub:
+pi install git:github.com/alpertarhan/pi-codeui
 ```
 
 For local development:
@@ -32,7 +35,7 @@ Start a file with the bundled schema:
 
 ```json
 {
-  "$schema": "https://unpkg.com/@pi-codeui/core/schemas/codeui.settings.schema.json",
+  "$schema": "https://unpkg.com/pi-codeui/schemas/codeui.settings.schema.json",
   "appearance": {
     "theme": "codeui-midnight",
     "density": "compact",
@@ -147,7 +150,7 @@ npm run verify
 npm pack --dry-run
 ```
 
-GitHub Actions runs the same typecheck, full temporary-repository test suite, and package-content smoke check on Node.js 22.19.0. Release history is maintained in [CHANGELOG.md](./CHANGELOG.md).
+GitHub Actions runs the same typecheck, full temporary-repository test suite, and package-content smoke check on Node.js 22.19.0. Release history is maintained in [CHANGELOG.md](./CHANGELOG.md). Pre-1.0 users should read [the v1 migration guide](./docs/MIGRATION-v1.md); maintainers use [the release checklist](./docs/RELEASING.md).
 
 ## Scope
 
