@@ -1,10 +1,12 @@
 # Pi extension compatibility
 
-This matrix records the configured extension set used for the CodeUI v1.1.0 release audit. It is evidence for the listed versions, not a promise about every future release of those packages.
+The validated extension matrix records the CodeUI v1.1.0 release-audit baseline; the ownership and control notes include the v1.2.0 additions. The listed versions are evidence, not a promise about future package releases.
 
 ## Ownership contract
 
 CodeUI is the only extension in this matrix that owns Pi's global header, footer, editor component, fullscreen `layoutRoot`, focus, and raw input listener. Other extensions use distinct widget/status keys or `setWorkingMessage`.
+
+Theme ownership is conditional. `appearance.theme: "inherit"` is the default and does not select or restore a theme. When an explicit theme such as bundled opt-in `codeui-midnight` is configured, CodeUI records the previous host theme and restores it only if CodeUI's selected theme is still active. A later user or extension theme change is therefore preserved.
 
 With `explorer.dockWidgets: true`, CodeUI keeps its own dirty-Changes strip beside the prompt and moves other above/below-editor widgets into the `EXTENSIONS` section. Third-party docking is generic and preserves component instances; it does not fork, rewrite, or key-match external widgets. Set `explorer.dockWidgets: false` to keep Pi's native widget placement.
 
@@ -42,6 +44,8 @@ CodeUI registers one public, display-only Markdown transformer for `You`/`Pi` la
 
 No configured extension shares CodeUI's command names, `Ctrl+Shift+G` shortcut, `pi-codeui.changes` widget key, or `pi-codeui.*` status keys. No configured extension calls `setHeader`, `setFooter`, `setEditorComponent`, or `setLayoutRoot`.
 
+Single-key controls are scoped to the focused CodeUI workspace. `t` applies only to Changes review scope; `r` reruns a stored check only in Checks and refreshes Git elsewhere; `[` / `]` / `0` / `z` are intercepted only while the fullscreen split rail is focused. Temporary `z` zoom is never persisted and resets when focus returns to Pi's prompt or the split is disposed.
+
 The two density notes are visual, not correctness conflicts. Use `w` to collapse the `EXTENSIONS` section or disable `explorer.dockWidgets` when persistent and transient widgets are active together.
 
 ## Verification
@@ -57,4 +61,6 @@ The split compatibility tests cover:
 - Unknown layout shape fail-closed behavior.
 - Optional native widget placement.
 - External layout replacement/adoption and identity-safe restore.
+- Theme inheritance, explicit selection, and identity-conditional restoration.
+- Scoped fullscreen split resize/zoom controls.
 - Releasing replaced panel subscriptions.

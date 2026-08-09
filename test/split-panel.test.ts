@@ -106,6 +106,38 @@ test("split restores responsive panel width and publishes resize state", () => {
   controller.dispose();
 });
 
+test("review zoom toggles without persisting and restores on focus exit", () => {
+  const tui = new TuiAltScreen(terminal(160, 40));
+  const editor = focusable();
+  tui.setLayoutRoot(new VStack([editor, component()]));
+  tui.setFocus(editor);
+  const patches: unknown[] = [];
+  const controller = new SplitPanelController(tui, {
+    git: new GitStateController(async () => ({ stdout: "", stderr: "", code: 1, killed: false }), "/repo", 0),
+    exec: async () => ({ stdout: "", stderr: "", code: 1, killed: false }),
+    getSettings: () => DEFAULT_SETTINGS,
+    theme: theme as any,
+    workspaceState: { panelWidthPercent: 44 },
+    onWorkspaceStateChange: (patch) => patches.push(patch),
+    onAction: () => {},
+  });
+  controller.focus();
+  assert.match(controller.diagnostic, /panel 70 cols/);
+  (tui as any).handleTerminalInput("z");
+  assert.match(controller.diagnostic, /panel 80 cols/);
+  assert.match(((tui as any).layoutRoot as Component).render(160).join("\n"), /ZOOM · 50% · 80 cols/);
+  assert.deepEqual(patches, []);
+  (tui as any).handleTerminalInput("z");
+  assert.match(controller.diagnostic, /panel 70 cols/);
+  assert.deepEqual(patches, []);
+  (tui as any).handleTerminalInput("z");
+  (tui.getFocusedComponent() as any).handleInput("q");
+  assert.equal(tui.getFocusedComponent(), editor);
+  assert.match(controller.diagnostic, /panel 70 cols/);
+  assert.deepEqual(patches, []);
+  controller.dispose();
+});
+
 test("structural viewport support does not require the optional runtime type-guard export", () => {
   const tui = new TuiAltScreen(terminal(), false, "/tmp");
   Object.defineProperty(tui, Symbol.for("@earendil-works/pi-tui/viewport"), { value: false, configurable: true });
@@ -238,8 +270,8 @@ test("widget docking can be disabled without hiding native extension widgets", (
   git.dispose();
 });
 
-test("split stays disabled for overlay preference and narrow terminals", () => {
-  const tui = new TuiAltScreen(terminal(90), false, "/tmp");
+test("default split starts at exactly 120 columns and falls back at 119", () => {
+  const tui = new TuiAltScreen(terminal(119), false, "/tmp");
   const originalRoot = component();
   tui.setLayoutRoot(originalRoot);
   const settings = cloneSettings(DEFAULT_SETTINGS);
@@ -253,11 +285,23 @@ test("split stays disabled for overlay preference and narrow terminals", () => {
   });
 
   assert.equal(controller.ensure(), false);
-  assert.match(controller.diagnostic, /90 < 100 cols/);
-  (tui.terminal as any).columns = 160;
-  settings.explorer.layout = "overlay";
-  assert.equal(controller.ensure(), false);
-  assert.equal((tui as any).layoutRoot, originalRoot);
+  assert.match(controller.diagnostic, /119 < 120 cols/);
+  (tui.terminal as any).columns = 120;
+  assert.equal(controller.ensure(), true);
   controller.dispose();
+
+  const overlayTui = new TuiAltScreen(terminal(160), false, "/tmp");
+  overlayTui.setLayoutRoot(originalRoot);
+  settings.explorer.layout = "overlay";
+  const overlay = new SplitPanelController(overlayTui, {
+    git,
+    exec: async () => ({ stdout: "", stderr: "", code: 0, killed: false }),
+    getSettings: () => settings,
+    theme: theme as any,
+    onAction: () => {},
+  });
+  assert.equal(overlay.ensure(), false);
+  assert.equal((overlayTui as any).layoutRoot, originalRoot);
+  overlay.dispose();
   git.dispose();
 });

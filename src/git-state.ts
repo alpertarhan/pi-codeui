@@ -1,5 +1,13 @@
-import { getLineStats, getRepoState, type GitExec } from "./git/git.ts";
-import type { LineStats, RepoState } from "./git/types.ts";
+import { getLineStats, getRepoState, listFiles, type GitExec } from "./git/git.ts";
+import type { FileLineStats, LineStats, RepoState } from "./git/types.ts";
+
+const fileStats = (stats: LineStats, path: string, oldPath?: string): FileLineStats | undefined => {
+  const current = stats.byPath?.get(path);
+  const previous = oldPath ? stats.byPath?.get(oldPath) : undefined;
+  if (!current) return previous;
+  if (!previous) return current;
+  return { added: current.added + previous.added, deleted: current.deleted + previous.deleted, binary: current.binary || previous.binary };
+};
 
 export type GitViewState =
   | { kind: "loading"; previous?: GitReadyState }
@@ -13,6 +21,8 @@ export class GitStateController {
   state: GitViewState = { kind: "loading" };
   private timer: NodeJS.Timeout | undefined;
   private abort: AbortController | undefined;
+  private fileAbort: AbortController | undefined;
+  private fileCache: { root: string; generation: number; promise: Promise<{ root: string; paths: string[] } | undefined> } | undefined;
   private generation = 0;
   private disposed = false;
   private readonly listeners = new Set<() => void>();
@@ -21,7 +31,7 @@ export class GitStateController {
   private readonly debounceMs: number;
   private readonly nonRepoPollMs: number;
 
-  constructor(exec: GitExec, cwd: string, debounceMs = 75, nonRepoPollMs = 2_000) {
+  constructor(exec: GitExec, cwd: string, debounceMs = 75, nonRepoPollMs = 30_000) {
     this.exec = exec;
     this.cwd = cwd;
     this.debounceMs = debounceMs;
@@ -45,6 +55,7 @@ export class GitStateController {
     clearTimeout(this.timer);
     this.timer = undefined;
     this.abort?.abort();
+    this.invalidateFiles();
     const abort = new AbortController();
     this.abort = abort;
     const generation = ++this.generation;
@@ -64,7 +75,19 @@ export class GitStateController {
         getLineStats(this.exec, repo.root, "working", { signal: abort.signal }),
         getLineStats(this.exec, repo.root, "cached", { signal: abort.signal }),
       ]);
-      this.finish(generation, abort, { ...repo, working, cached });
+      this.finish(generation, abort, {
+        ...repo,
+        status: {
+          ...repo.status,
+          files: repo.status.files.map((file) => ({
+            ...file,
+            workingStats: fileStats(working, file.path, file.oldPath),
+            stagedStats: fileStats(cached, file.path, file.oldPath),
+          })),
+        },
+        working,
+        cached,
+      });
     } catch (error) {
       if (!this.disposed && !abort.signal.aborted && generation === this.generation) {
         abort.abort();
@@ -74,6 +97,22 @@ export class GitStateController {
     }
   }
 
+  loadFiles(reload = false): Promise<{ root: string; paths: string[] } | undefined> {
+    const state = this.state.kind === "repo" ? this.state : this.state.kind === "loading" && this.state.previous?.kind === "repo" ? this.state.previous : undefined;
+    if (this.disposed || !state) return Promise.resolve(undefined);
+    if (reload) this.invalidateFiles();
+    if (this.fileCache?.root === state.root && this.fileCache.generation === this.generation) return this.fileCache.promise;
+    const root = state.root;
+    const generation = this.generation;
+    const abort = new AbortController();
+    this.fileAbort = abort;
+    const promise = listFiles(this.exec, root, { signal: abort.signal })
+      .then((paths) => this.disposed || abort.signal.aborted || generation !== this.generation || this.repoRoot() !== root ? undefined : { root, paths })
+      .finally(() => { if (this.fileAbort === abort) this.fileAbort = undefined; });
+    this.fileCache = { root, generation, promise };
+    return promise;
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -81,8 +120,19 @@ export class GitStateController {
     this.timer = undefined;
     this.abort?.abort();
     this.abort = undefined;
+    this.invalidateFiles();
     this.listeners.clear();
     this.generation++;
+  }
+
+  private repoRoot(): string | undefined {
+    return this.state.kind === "repo" ? this.state.root : this.state.kind === "loading" && this.state.previous?.kind === "repo" ? this.state.previous.root : undefined;
+  }
+
+  private invalidateFiles(): void {
+    this.fileAbort?.abort();
+    this.fileAbort = undefined;
+    this.fileCache = undefined;
   }
 
   private finish(generation: number, abort: AbortController, state: GitViewState): void {

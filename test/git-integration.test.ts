@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { ExecOptions, ExecResult } from "@earendil-works/pi-coding-agent";
-import { applyPatchHunk, commitStaged, detectRoot, discardTrackedFile, getDiff, getLineStats, getRepoState, GitCancelledError, GitError, parsePatchHunks, previewUntracked, stageFile, unstageFile, validateCommitMessage, type GitExec } from "../src/git/git.ts";
+import { applyPatchHunk, commitStaged, detectRoot, discardTrackedFile, getDiff, getLineStats, getRepoState, GitCancelledError, GitError, listFiles, parsePatchHunks, previewUntracked, stageFile, unstageFile, validateCommitMessage, type GitExec } from "../src/git/git.ts";
 import { GitStateController } from "../src/git-state.ts";
 
 const exec: GitExec = (command: string, args: string[], options: ExecOptions = {}) => new Promise((resolve, reject) => {
@@ -83,17 +83,59 @@ test("Git calls forward argv/options and expose typed command and parse failures
   assert.equal(call?.options?.signal, signal);
   await getDiff(capture, "/repo", "file", "working", { ignoreWhitespace: true });
   assert.deepEqual(call?.args, ["diff", "--no-ext-diff", "--no-color", "--unified=3", "--ignore-all-space", "--", "file"]);
+  await listFiles(capture, "/repo");
+  assert.deepEqual(call?.args, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"]);
   await stageFile(capture, "/repo", "new name.ts", { relatedPath: "old name.ts" });
   assert.deepEqual(call?.args, ["add", "--", "new name.ts", "old name.ts"]);
 
   const commandFailure: GitExec = async () => ({ stdout: "", stderr: "broken", code: 2, killed: false });
   await assert.rejects(() => getDiff(commandFailure, "/repo", "file", "working"), (error: unknown) => error instanceof GitError && error.code === 2);
+  await assert.rejects(() => listFiles(commandFailure, "/repo"), (error: unknown) => error instanceof GitError && error.code === 2);
   const malformed: GitExec = async (_command, args) => args[0] === "rev-parse"
     ? { stdout: "/repo\n", stderr: "", code: 0, killed: false }
     : { stdout: "bad", stderr: "", code: 0, killed: false };
   await assert.rejects(() => getRepoState(malformed, "/repo"), GitError);
   const rejected: GitExec = async () => { throw new Error("cannot spawn"); };
   await assert.rejects(() => detectRoot(rejected, "/repo"), GitError);
+});
+
+test("Git state caches file lists per generation and reloads on demand", async () => {
+  let calls = 0;
+  const controller = new GitStateController(async (_command, args) => {
+    if (args[0] === "ls-files") calls++;
+    return { stdout: "README.md\0", stderr: "", code: 0, killed: false };
+  }, "/repo", 0, 0);
+  controller.state = {
+    kind: "repo", root: "/repo",
+    status: { branch: { name: "main", ahead: 0, behind: 0, detached: false, unborn: false, gone: false }, files: [], counts: { staged: 0, unstaged: 0, untracked: 0, conflicted: 0 } },
+    working: { files: 0, added: 0, deleted: 0, binaryFiles: 0 }, cached: { files: 0, added: 0, deleted: 0, binaryFiles: 0 },
+  };
+  assert.deepEqual(await controller.loadFiles(), { root: "/repo", paths: ["README.md"] });
+  assert.deepEqual(await controller.loadFiles(), { root: "/repo", paths: ["README.md"] });
+  assert.equal(calls, 1);
+  await controller.loadFiles(true);
+  assert.equal(calls, 2);
+  controller.dispose();
+  assert.equal(await controller.loadFiles(), undefined);
+});
+
+test("file listing includes tracked and non-ignored untracked unusual paths", async (t) => {
+  const root = await repository(t);
+  const tracked = "tracked name.txt";
+  const unusual = "odd\tline\nname.txt";
+  await writeFile(join(root, tracked), "tracked\n");
+  await git(root, "add", "--", tracked);
+  await git(root, "commit", "-m", "base");
+  assert.deepEqual(await listFiles(exec, root), [tracked]);
+
+  await writeFile(join(root, unusual), "untracked\n");
+  await writeFile(join(root, ".gitignore"), "ignored.txt\n");
+  await writeFile(join(root, "ignored.txt"), "ignored\n");
+  const paths = await listFiles(exec, root);
+  assert.ok(paths.includes(tracked));
+  assert.ok(paths.includes(unusual));
+  assert.ok(paths.includes(".gitignore"));
+  assert.equal(paths.includes("ignored.txt"), false);
 });
 
 test("safe file actions stage, unstage, and discard without shell interpolation", async (t) => {
@@ -208,6 +250,18 @@ test("real Git repository status, diffs, stats, and root detection", async (t) =
   const workingStats = await getLineStats(exec, root, "working");
   assert.ok(workingStats.deleted >= 1);
   assert.ok(workingStats.added >= 1);
+
+  const controller = new GitStateController(exec, root, 0, 0);
+  await controller.refresh();
+  assert.equal(controller.state.kind, "repo");
+  if (controller.state.kind === "repo") {
+    const tracked = controller.state.status.files.find((file) => file.path === "tracked.txt");
+    assert.deepEqual(tracked?.stagedStats, { added: 1, deleted: 0, binary: false });
+    assert.deepEqual(tracked?.workingStats, { added: 1, deleted: 0, binary: false });
+    assert.equal(controller.state.status.files.find((file) => file.path === "blob.bin")?.stagedStats?.binary, true);
+    assert.deepEqual(controller.state.status.files.find((file) => file.path === "new name.txt")?.stagedStats, { added: 1, deleted: 1, binary: false });
+  }
+  controller.dispose();
 
   assert.deepEqual(await previewUntracked(root, "untracked name.txt", 4), { text: "0123", binary: false, truncated: true, bytesRead: 5 });
   await writeFile(join(root, "untracked.bin"), Buffer.from([65, 0, 66]));

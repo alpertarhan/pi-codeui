@@ -51,8 +51,11 @@ test("malformed porcelain and branch metadata fail predictably", () => {
   assert.throws(() => parseBranch("## main...origin/main [unknown]"), PorcelainError);
 });
 
-test("numstat totals text, preserves unusual paths, and excludes binary fields", () => {
-  assert.deepEqual(parseNumstat("2\t3\ta\tname\n界\0-\t-\tbinary.dat\0"), { files: 2, added: 2, deleted: 3, binaryFiles: 1 });
+test("numstat totals and per-file stats preserve unusual paths and binary markers", () => {
+  const parsed = parseNumstat("2\t3\ta\tname\n界\0-\t-\tbinary.dat\0");
+  assert.deepEqual({ files: parsed.files, added: parsed.added, deleted: parsed.deleted, binaryFiles: parsed.binaryFiles }, { files: 2, added: 2, deleted: 3, binaryFiles: 1 });
+  assert.deepEqual(parsed.byPath?.get("a\tname\n界"), { added: 2, deleted: 3, binary: false });
+  assert.deepEqual(parsed.byPath?.get("binary.dat"), { added: 0, deleted: 0, binary: true });
   assert.throws(() => parseNumstat("bad\0"), PorcelainError);
   assert.throws(() => parseNumstat("1\t2\t\0"), PorcelainError);
 });

@@ -14,7 +14,7 @@ const VStack = PiTuiRuntime.VStack;
 import type { ActivityTracker } from "./activity.ts";
 import { isCodeuiChangesWidget } from "./changes-widget.ts";
 import type { GitExec } from "./git/git.ts";
-import { GitExplorer, type ExplorerView, type GitExplorerResult } from "./git-explorer.ts";
+import { GitExplorer, type ExplorerView, type GitExplorerOptions, type GitExplorerResult } from "./git-explorer.ts";
 import type { GitStateController } from "./git-state.ts";
 import type { CodeuiSettings } from "./settings.ts";
 import type { SessionOverview } from "./session.ts";
@@ -83,6 +83,7 @@ export interface SplitPanelOptions {
   isAgentRunning?: () => boolean;
   getView?: () => ExplorerView;
   onViewChange?: (view: ExplorerView) => void;
+  rerunCheck?: GitExplorerOptions["rerunCheck"];
   exec: GitExec;
   getSettings: () => Readonly<CodeuiSettings>;
   theme: Theme;
@@ -115,6 +116,7 @@ export class SplitPanelController {
   private previousFocus: Component | null = null;
   private panelColumns = 0;
   private panelWidthPercentOverride: number | undefined;
+  private reviewZoomed = false;
   private resizing = false;
   private resizeNotice: string | undefined;
   private resizeNoticeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -160,7 +162,7 @@ export class SplitPanelController {
     const internal = this.tui as InternalViewportTui;
     this.installMouseListener();
     if (this.installed) {
-      const columns = this.getPanelColumns();
+      const columns = this.getActivePanelColumns();
       if (columns !== this.panelColumns) this.mount(this.originalRoot!, this.panel!, columns);
       return true;
     }
@@ -177,7 +179,7 @@ export class SplitPanelController {
     this.originalRoot = currentRoot;
     this.configureWidgetDock();
     this.panel = this.createPanel();
-    this.mount(currentRoot, this.panel, this.getPanelColumns());
+    this.mount(currentRoot, this.panel, this.getActivePanelColumns());
     return true;
   }
 
@@ -194,7 +196,7 @@ export class SplitPanelController {
   settingsChanged(): void {
     if (!this.ensure()) return;
     this.configureWidgetDock();
-    if (this.originalRoot && this.panel) this.mount(this.originalRoot, this.panel, this.getPanelColumns());
+    if (this.originalRoot && this.panel) this.mount(this.originalRoot, this.panel, this.getActivePanelColumns());
     this.panel?.settingsChanged();
     this.tui.requestRender();
   }
@@ -223,6 +225,10 @@ export class SplitPanelController {
         }
         if (data === "0") {
           this.resetPanelColumns();
+          return { consume: true };
+        }
+        if (data === "z") {
+          this.toggleReviewZoom();
           return { consume: true };
         }
       }
@@ -300,6 +306,7 @@ export class SplitPanelController {
 
   private focusMain(): boolean {
     if (!this.previousFocus) return false;
+    this.restoreReviewZoom();
     this.tui.setFocus(this.previousFocus);
     this.tui.requestRender();
     return true;
@@ -310,6 +317,7 @@ export class SplitPanelController {
   }
 
   private resizePanelTo(columns: number): void {
+    this.reviewZoomed = false;
     const next = this.clampPanelColumns(columns);
     this.panelWidthPercentOverride = (next / Math.max(1, this.tui.terminal.columns)) * 100;
     this.options.onWorkspaceStateChange?.({ panelWidthPercent: Math.round(this.panelWidthPercentOverride) });
@@ -318,11 +326,25 @@ export class SplitPanelController {
   }
 
   private resetPanelColumns(): void {
+    this.reviewZoomed = false;
     this.panelWidthPercentOverride = undefined;
     this.options.onWorkspaceStateChange?.({ panelWidthPercent: undefined });
     const next = this.getPanelColumns();
     if (next !== this.panelColumns && this.originalRoot && this.panel) this.mount(this.originalRoot, this.panel, next);
     this.showResizeNotice("RESET");
+  }
+
+  private toggleReviewZoom(): void {
+    this.reviewZoomed = !this.reviewZoomed;
+    if (this.originalRoot && this.panel) this.mount(this.originalRoot, this.panel, this.getActivePanelColumns());
+    this.showResizeNotice(this.reviewZoomed ? "ZOOM" : "RESTORE");
+  }
+
+  private restoreReviewZoom(): void {
+    if (!this.reviewZoomed) return;
+    this.reviewZoomed = false;
+    if (this.originalRoot && this.panel) this.mount(this.originalRoot, this.panel, this.getPanelColumns());
+    this.showResizeNotice("RESTORE");
   }
 
   private showResizeNotice(prefix?: string, hold = false): void {
@@ -370,6 +392,7 @@ export class SplitPanelController {
         isAgentRunning: this.options.isAgentRunning,
         initialView: this.options.getView?.(),
         onViewChange: this.options.onViewChange,
+        rerunCheck: this.options.rerunCheck,
       },
     );
   }
@@ -387,10 +410,11 @@ export class SplitPanelController {
 
   private deactivate(result?: GitExplorerResult): void {
     if (this.disposed) return;
+    this.reviewZoomed = false;
     this.panel?.dispose();
     this.panel = this.createPanel();
     if (this.originalRoot && supportsViewportLayout(this.tui)) {
-      this.mount(this.originalRoot, this.panel, this.getPanelColumns());
+      this.mount(this.originalRoot, this.panel, this.getActivePanelColumns());
     }
     this.tui.setFocus(this.previousFocus);
     this.previousFocus = null;
@@ -419,11 +443,16 @@ export class SplitPanelController {
     return this.clampPanelColumns(this.tui.terminal.columns * percentage(settings.splitWidth));
   }
 
+  private getActivePanelColumns(): number {
+    return this.reviewZoomed ? this.clampPanelColumns(this.tui.terminal.columns * 0.5) : this.getPanelColumns();
+  }
+
   private restore(): void {
     if (this.resizeNoticeTimer) clearTimeout(this.resizeNoticeTimer);
     this.resizeNoticeTimer = undefined;
     this.resizeNotice = undefined;
     this.resizing = false;
+    this.reviewZoomed = false;
     this.unsubscribeMouse?.();
     this.unsubscribeMouse = undefined;
     this.panel?.dispose();

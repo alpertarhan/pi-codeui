@@ -1,6 +1,8 @@
 import { stripVTControlCharacters } from "node:util";
 
 const RESET = "\x1b[0m";
+/** pi-tui's stable APC cursor marker, kept local for hosts that do not export the helper. */
+export const CURSOR_MARKER = "\x1b_pi:c\x07";
 const WIDTH_CACHE_LIMIT = 1_024;
 const widthCache = new Map<string, number>();
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });

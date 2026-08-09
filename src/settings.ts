@@ -32,6 +32,7 @@ export interface CodeuiSettings {
     maxDockRows: number;
     diffContext: number;
     maxDiffLines: number;
+    maxSearchRecords: number;
   };
   vim: {
     enabled: boolean;
@@ -46,7 +47,7 @@ export interface CodeuiSettings {
 
 export const DEFAULT_SETTINGS: Readonly<CodeuiSettings> = Object.freeze({
   appearance: Object.freeze({
-    theme: "codeui-midnight",
+    theme: "inherit",
     density: "compact",
     borders: "rounded",
     glyphPreset: "nerd",
@@ -55,7 +56,7 @@ export const DEFAULT_SETTINGS: Readonly<CodeuiSettings> = Object.freeze({
   }),
   chrome: Object.freeze({ header: true, footer: true, editor: true, messageLabels: true }),
   widget: Object.freeze({ enabled: true, maxFiles: 4, placement: "aboveEditor" }),
-  explorer: Object.freeze({ layout: "split", splitWidth: "34%", overlayWidth: "52%", minOverlayColumns: 100, dockWidgets: true, maxDockRows: 12, diffContext: 3, maxDiffLines: 500 }),
+  explorer: Object.freeze({ layout: "split", splitWidth: "34%", overlayWidth: "52%", minOverlayColumns: 120, dockWidgets: true, maxDockRows: 12, diffContext: 3, maxDiffLines: 500, maxSearchRecords: 50 }),
   vim: Object.freeze({ enabled: false, startMode: "insert", externalEditor: Object.freeze(["nvim"]) as unknown as string[] }),
   git: Object.freeze({ showUntracked: true, ignoreWhitespace: false }),
 });
@@ -111,7 +112,7 @@ export function normalizeSettings(raw: unknown, inherited: Readonly<CodeuiSettin
   const widget = section("widget");
   reportUnknown(widget, ["enabled", "maxFiles", "placement"], "widget", warnings);
   const explorer = section("explorer");
-  reportUnknown(explorer, ["layout", "splitWidth", "overlayWidth", "minOverlayColumns", "dockWidgets", "maxDockRows", "diffContext", "maxDiffLines"], "explorer", warnings);
+  reportUnknown(explorer, ["layout", "splitWidth", "overlayWidth", "minOverlayColumns", "dockWidgets", "maxDockRows", "diffContext", "maxDiffLines", "maxSearchRecords"], "explorer", warnings);
   const vim = section("vim");
   reportUnknown(vim, ["enabled", "startMode", "externalEditor"], "vim", warnings);
   const git = section("git");
@@ -147,6 +148,7 @@ export function normalizeSettings(raw: unknown, inherited: Readonly<CodeuiSettin
         maxDockRows: integerField(explorer, "maxDockRows", 3, 24, inherited.explorer.maxDockRows, "explorer", warnings),
         diffContext: integerField(explorer, "diffContext", 0, 20, inherited.explorer.diffContext, "explorer", warnings),
         maxDiffLines: integerField(explorer, "maxDiffLines", 50, 5000, inherited.explorer.maxDiffLines, "explorer", warnings),
+        maxSearchRecords: integerField(explorer, "maxSearchRecords", 1, 200, inherited.explorer.maxSearchRecords, "explorer", warnings),
       },
       vim: {
         enabled: booleanField(vim, "enabled", inherited.vim.enabled, "vim", warnings),

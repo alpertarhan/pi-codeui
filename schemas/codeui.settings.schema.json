@@ -10,7 +10,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "theme": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "theme": { "type": "string", "minLength": 1, "maxLength": 128, "default": "inherit" },
         "density": { "enum": ["compact", "comfortable"] },
         "borders": { "enum": ["rounded", "square", "minimal"] },
         "glyphPreset": { "enum": ["nerd", "unicode", "ascii", "custom"] },
@@ -54,11 +54,12 @@
         "layout": { "enum": ["split", "overlay"] },
         "splitWidth": { "type": "string", "pattern": "^(2[0-9]|3[0-9]|4[0-9]|50)%$" },
         "overlayWidth": { "type": "string", "pattern": "^(3[0-9]|[4-8][0-9]|90)%$" },
-        "minOverlayColumns": { "type": "integer", "minimum": 60, "maximum": 300 },
+        "minOverlayColumns": { "type": "integer", "minimum": 60, "maximum": 300, "default": 120 },
         "dockWidgets": { "type": "boolean" },
         "maxDockRows": { "type": "integer", "minimum": 3, "maximum": 24 },
         "diffContext": { "type": "integer", "minimum": 0, "maximum": 20 },
-        "maxDiffLines": { "type": "integer", "minimum": 50, "maximum": 5000 }
+        "maxDiffLines": { "type": "integer", "minimum": 50, "maximum": 5000 },
+        "maxSearchRecords": { "type": "integer", "minimum": 1, "maximum": 200, "default": 50 }
       }
     },
     "vim": {

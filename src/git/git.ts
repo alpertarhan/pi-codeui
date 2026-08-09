@@ -77,6 +77,13 @@ export async function detectRoot(exec: GitExec, cwd: string, options: GitCallOpt
   return root;
 }
 
+export async function listFiles(exec: GitExec, root: string, options: GitCallOptions = {}): Promise<string[]> {
+  const args = ["ls-files", "-z", "--cached", "--others", "--exclude-standard"];
+  const result = await run(exec, args, root, options);
+  if (result.code !== 0) throw failed(args, result);
+  return result.stdout.split("\0").filter(Boolean);
+}
+
 export async function getRepoState(exec: GitExec, cwd: string, options: GitCallOptions = {}): Promise<RepoState> {
   const root = await detectRoot(exec, cwd, options);
   if (!root) return { kind: "none" };

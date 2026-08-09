@@ -1,6 +1,7 @@
+import { existsSync } from "node:fs";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Key } from "@earendil-works/pi-tui";
-import { ActivityTracker } from "./activity.ts";
+import { ActivityTracker, type ActivityRecord } from "./activity.ts";
 import { createChangesWidget, markCodeuiChangesWidget } from "./changes-widget.ts";
 import { chromeContext, createChromeBar } from "./chrome.ts";
 import { getSettingsPaths } from "./config.ts";
@@ -45,6 +46,9 @@ interface Runtime {
   session: SessionOverview;
   workspaceView: ExplorerView;
   requestRender?: () => void;
+  originalTheme: string | undefined;
+  themeSetting?: string;
+  ownedTheme?: string;
 }
 
 export default function codeui(pi: ExtensionAPI): void {
@@ -72,9 +76,22 @@ export default function codeui(pi: ExtensionAPI): void {
     active.editorChrome = undefined;
   };
 
+  const setTheme = (active: Runtime, name: string): boolean => {
+    const result = active.ctx.ui.setTheme(name);
+    if (!result.success) active.ctx.ui.notify(`pi-codeui theme: ${sanitizeTerminalLine(result.error ?? "theme not found")}`, "warning");
+    return result.success;
+  };
+
+  const restoreTheme = (active: Runtime): void => {
+    if (active.ownedTheme && active.ctx.ui.theme.name !== active.ownedTheme) active.ownedTheme = undefined;
+    if (!active.ownedTheme) return;
+    if (active.originalTheme === undefined || setTheme(active, active.originalTheme)) active.ownedTheme = undefined;
+  };
+
   const disposeRuntime = (ctx?: ExtensionContext): void => {
     const active = runtime;
     const previousCtx = active?.ctx;
+    if (active) restoreTheme(active);
     active?.explorer?.dismiss();
     active?.split?.dispose();
     if (active) restoreEditor(active);
@@ -132,6 +149,18 @@ export default function codeui(pi: ExtensionAPI): void {
     active.ctx.ui.setEditorComponent(active.vimFactory);
   };
 
+  const rerunCheck = async (active: Runtime, record: ActivityRecord): Promise<void> => {
+    if (runtime !== active) return;
+    const completed = await active.activity.rerun(record, (rerun) => {
+      const shell = process.platform === "win32" ? "bash" : existsSync("/bin/bash") ? "/bin/bash" : "bash";
+      return pi.exec(shell, ["-c", rerun.command], {
+        cwd: rerun.cwd,
+        ...(Number.isFinite(rerun.timeout) && rerun.timeout! > 0 ? { timeout: rerun.timeout! * 1_000 } : {}),
+      });
+    });
+    if (!completed && runtime === active) active.ctx.ui.notify("A check rerun is already running.", "warning");
+  };
+
   const handleExplorerAction = async (active: Runtime, result: Exclude<GitExplorerResult, undefined>): Promise<void> => {
     if (runtime !== active) return;
     const editor = active.settings.current.vim.externalEditor;
@@ -149,9 +178,12 @@ export default function codeui(pi: ExtensionAPI): void {
     const active = runtime;
     const { ctx, git } = active;
     const current = active.settings.current;
-    if (current.appearance.theme !== "inherit") {
-      const themeResult = ctx.ui.setTheme(current.appearance.theme);
-      if (!themeResult.success) ctx.ui.notify(`pi-codeui theme: ${sanitizeTerminalLine(themeResult.error ?? "theme not found")}`, "warning");
+    const requestedTheme = current.appearance.theme;
+    if (active.ownedTheme && ctx.ui.theme.name !== active.ownedTheme) active.ownedTheme = undefined;
+    if (requestedTheme !== active.themeSetting) {
+      active.themeSetting = requestedTheme;
+      if (requestedTheme === "inherit") restoreTheme(active);
+      else if (setTheme(active, requestedTheme)) active.ownedTheme = requestedTheme;
     }
     const context = () => chromeContext(ctx, active.agentRunning, active.session.title);
     const publicChrome = (kind: "header" | "footer", tui: Parameters<typeof createChromeBar>[1], theme: Parameters<typeof createChromeBar>[2]) => {
@@ -175,6 +207,7 @@ export default function codeui(pi: ExtensionAPI): void {
         isAgentRunning: () => active.agentRunning,
         getView: () => active.workspaceView,
         onViewChange: (view) => { active.workspaceView = view; },
+        rerunCheck: (record) => rerunCheck(active, record),
         exec: pi.exec.bind(pi),
         getSettings: () => active.settings.current,
         theme,
@@ -236,6 +269,7 @@ export default function codeui(pi: ExtensionAPI): void {
           isAgentRunning: () => active.agentRunning,
           initialView: active.workspaceView,
           onViewChange: (view) => { active.workspaceView = view; },
+          rerunCheck: (record) => rerunCheck(active, record),
           confirm: (title, message) => ctx.ui.confirm(title, message),
           input: (title, placeholder) => ctx.ui.input(title, placeholder),
           select: (title, options) => ctx.ui.select(title, options),
@@ -270,15 +304,18 @@ export default function codeui(pi: ExtensionAPI): void {
     if (ctx.mode !== "tui") return;
 
     const git = new GitStateController(pi.exec.bind(pi), ctx.cwd);
+    const branch = ctx.sessionManager.getBranch();
     const activity = new ActivityTracker(ctx.cwd);
+    activity.hydrate(branch);
     const workspaceStore = new WorkspaceStateStore();
     const unsubscribe = git.onChange(() => {
       if (!runtime) return;
       const state = git.state;
+      if (state.kind === "repo") activity.setRoot(state.root);
       ctx.ui.setStatus(GIT_KEY, state.kind === "error" ? ctx.ui.theme.fg("error", "git error") : undefined);
     });
-    const session = summarizeSession(ctx.sessionManager.getBranch(), ctx.sessionManager.getSessionName());
-    runtime = { settings, git, activity, workspaceStore, workspaceRoot: ctx.cwd, ctx, unsubscribe, agentRunning: false, session, workspaceView: "session" };
+    const session = summarizeSession(branch, ctx.sessionManager.getSessionName());
+    runtime = { settings, git, activity, workspaceStore, workspaceRoot: ctx.cwd, ctx, unsubscribe, agentRunning: false, session, workspaceView: "session", originalTheme: ctx.ui.theme.name };
     await git.refresh();
     if (runtime) runtime.workspaceRoot = git.state.kind === "repo" ? git.state.root : ctx.cwd;
     if (workspaceStore.warning) ctx.ui.notify(`pi-codeui workspace state: ${sanitizeTerminalLine(workspaceStore.warning)}`, "warning");
@@ -304,17 +341,23 @@ export default function codeui(pi: ExtensionAPI): void {
   pi.on("agent_start", () => {
     if (!runtime) return;
     runtime.agentRunning = true;
+    runtime.activity.beginRequest();
     runtime.requestRender?.();
   });
   pi.on("agent_end", () => {
     if (!runtime) return;
     runtime.agentRunning = false;
+    runtime.activity.finalizeRequest();
     runtime.requestRender?.();
   });
   pi.on("tool_result", (event) => {
     if (event.toolName === "edit" || event.toolName === "write" || event.toolName === "bash") runtime?.git.schedule();
   });
-  pi.on("agent_settled", () => runtime?.git.schedule());
+  pi.on("agent_settled", () => {
+    runtime?.activity.finalizeRequest();
+    runtime?.git.schedule();
+    runtime?.requestRender?.();
+  });
 
   pi.registerCommand("codeui", {
     description: "Open the CodeUI workspace",
@@ -389,6 +432,7 @@ export default function codeui(pi: ExtensionAPI): void {
         `Explorer layout: ${runtime?.split?.diagnostic ?? current.explorer.layout}`,
         `Workspace state: ${runtime?.workspaceStore.path ?? "inactive"} · ${JSON.stringify(workspaceState)}`,
         `Activity: ${runtime?.activity.records.length ?? 0} records · ${runtime?.activity.diagnostics.length ?? 0} problems${runtime?.activity.current ? ` · ${runtime.activity.current.status} ${runtime.activity.current.toolName}` : ""}`,
+        `Latest request: ${runtime?.activity.latestRequest ? `${runtime.activity.latestRequest.editedPathCount} edited · ${runtime.activity.latestRequest.checkCount} ${runtime.activity.latestRequest.checkCount === 1 ? "check" : "checks"} · ${runtime.activity.latestRequest.failureCount} failed${runtime.activity.latestRequest.active ? " · active" : ""}` : "none"}`,
         `External editor: ${current.vim.externalEditor.join(" ")}`,
         `Embedded Vim: ${(runtime?.vimOverride ?? current.vim.enabled) ? "enabled" : "disabled"}`,
         "Font family, size, features, and ligatures are managed by the host terminal.",

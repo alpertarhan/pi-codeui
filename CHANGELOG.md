@@ -4,6 +4,37 @@ All notable changes to `pi-codeui` are documented here. The project follows sema
 
 ## Unreleased
 
+## 1.2.0 - 2026-08-09
+
+### Added
+
+- Hydrate completed tool Activity and Checks from resumed session history.
+- Add a latest-request summary and `t` review filter for files changed by successful direct `edit`/`write` calls, without claiming file ownership.
+- Search all tracked and non-ignored untracked repository files alongside messages, Activity, and Checks; add `explorer.maxSearchRecords` (1–200, default 50).
+- Show separate per-file Worktree and Staged numstats.
+- Add confirmed Checks rerun with `r`, preserving the original Bash validation command, cwd, and finite timeout in seconds.
+- Add temporary fullscreen-split review zoom with `z` and IME-safe grapheme/cursor handling in Search.
+- Poll for repository discovery every 30 seconds only while outside a Git repository.
+
+### Changed
+
+- Default `appearance.theme` to `inherit`; CodeUI Midnight remains bundled, recommended, and opt-in.
+- Raise the default fullscreen split threshold from 100 to 120 columns and keep `[` / `]` / `0` / `z` scoped to fullscreen split mode.
+- Use compact `Sess` / `Act` / `Git` / `Chk` tabs and action-first contextual hints at constrained widths.
+- Treat `r` as Checks rerun in Checks and Git refresh elsewhere.
+- Preserve host/user theme changes by restoring a CodeUI-selected theme only while CodeUI still owns it.
+
+### Fixed
+
+- Resolve activity paths and Git data against the detected repository root in nested monorepo directories.
+- Keep working and staged line statistics attached to the correct files, including rename paths.
+- Preserve full validation timeout semantics when displaying and rerunning Bash checks.
+
+### Security
+
+- Block tracked-file discard for the entire agent-active period and recheck after confirmation.
+- Make the rerun shell boundary explicit: confirmation shows the sanitized full command, cwd, and timeout, while execution passes the original untruncated command only as `/bin/bash|bash -c <rawCommand>`.
+
 ## 1.1.0 - 2026-08-08
 
 - Add public-API transcript identity labels for user and Pi messages, including a streaming `working` state, without replacing Pi's native transcript or tools.

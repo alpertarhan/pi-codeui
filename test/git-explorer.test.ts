@@ -4,18 +4,19 @@ import test from "node:test";
 import type { Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { ActivityTracker } from "../src/activity.ts";
-import { filesForScope, formatUnifiedDiff, GitExplorer } from "../src/git-explorer.ts";
+import { filesForScope, formatUnifiedDiff, GitExplorer, MAX_SEARCH_DOCUMENTS } from "../src/git-explorer.ts";
 import type { GitExec } from "../src/git/git.ts";
 import { GitStateController } from "../src/git-state.ts";
 import { GLYPH_PRESETS } from "../src/glyphs.ts";
 import type { FileChange } from "../src/git/types.ts";
 import { cloneSettings, DEFAULT_SETTINGS } from "../src/settings.ts";
+import { CURSOR_MARKER } from "../src/tui-compat.ts";
 
 const files: FileChange[] = [
-  { path: "both.ts", index: "M", worktree: "M", staged: true, unstaged: true, untracked: false, conflicted: false },
-  { path: "staged.ts", index: "A", worktree: " ", staged: true, unstaged: false, untracked: false, conflicted: false },
-  { path: "working.ts", index: " ", worktree: "M", staged: false, unstaged: true, untracked: false, conflicted: false },
-  { path: "conflict.ts", index: "U", worktree: "U", staged: false, unstaged: false, untracked: false, conflicted: true },
+  { path: "both.ts", index: "M", worktree: "M", staged: true, unstaged: true, untracked: false, conflicted: false, workingStats: { added: 3, deleted: 1, binary: false }, stagedStats: { added: 7, deleted: 2, binary: false } },
+  { path: "staged.ts", index: "A", worktree: " ", staged: true, unstaged: false, untracked: false, conflicted: false, stagedStats: { added: 4, deleted: 0, binary: false } },
+  { path: "working.ts", index: " ", worktree: "M", staged: false, unstaged: true, untracked: false, conflicted: false, workingStats: { added: 5, deleted: 2, binary: false } },
+  { path: "conflict.ts", index: "U", worktree: "U", staged: false, unstaged: false, untracked: false, conflicted: true, workingStats: { added: 0, deleted: 0, binary: true } },
   { path: "new.ts", index: "?", worktree: "?", staged: false, unstaged: false, untracked: true, conflicted: false },
 ];
 
@@ -66,6 +67,80 @@ test("Explorer scopes include the right staged, working, conflict, and untracked
   assert.deepEqual(filesForScope(files, "working", false).map((file) => file.path), ["both.ts", "working.ts", "conflict.ts"]);
 });
 
+test("latest-request review intersects working and staged scopes without claiming unrelated changes", async () => {
+  const activity = new ActivityTracker("/repo");
+  activity.beginRequest();
+  for (const [id, path] of [["both", "both.ts"], ["working", "working.ts"]] as const) {
+    activity.start({ type: "tool_execution_start", toolCallId: id, toolName: "edit", args: { path, edits: [] } }, 1);
+    activity.end({ type: "tool_execution_end", toolCallId: id, toolName: "edit", result: {}, isError: false }, 2);
+  }
+  activity.start({ type: "tool_execution_start", toolCallId: "check", toolName: "bash", args: { command: "npm test" } }, 3);
+  activity.end({ type: "tool_execution_end", toolCallId: "check", toolName: "bash", result: {}, isError: true }, 4);
+  activity.finalizeRequest();
+  const explorer = new GitExplorer(controller(), async () => ({ stdout: "@@ -1 +1 @@\n-old\n+new", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, { activity, getTerminalRows: () => 30 });
+  await settle();
+  explorer.handleInput("g");
+
+  let rendered = stripTerminalSequences(explorer.render(100).join("\n"));
+  assert.match(rendered, /LATEST REQUEST 2\/4/);
+  assert.match(rendered, /2 edited · 1 check · 1 failed/);
+  assert.doesNotMatch(rendered, /conflict\.ts|new\.ts/, "unrelated dirty files stay out of latest-request review");
+
+  explorer.handleInput("\t");
+  rendered = stripTerminalSequences(explorer.render(100).join("\n"));
+  assert.match(rendered, /LATEST REQUEST 1\/2/);
+  assert.doesNotMatch(rendered, /staged\.ts/);
+
+  explorer.handleInput("t");
+  rendered = stripTerminalSequences(explorer.render(100).join("\n"));
+  assert.match(rendered, /ALL WORKSPACE 2\/2/);
+  assert.match(rendered, /staged\.ts/);
+
+  activity.beginRequest();
+  activity.finalizeRequest();
+  rendered = stripTerminalSequences(explorer.render(100).join("\n"));
+  assert.match(rendered, /ALL WORKSPACE 2\/2/);
+  explorer.handleInput("t");
+  assert.match(stripTerminalSequences(explorer.render(100).join("\n")), /no successfully edited files/);
+  explorer.dispose();
+});
+
+test("Changes rows select working/staged stats and drop them before paths at narrow widths", async () => {
+  const explorer = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, { embedded: true, getTerminalRows: () => 24 });
+  await settle();
+  explorer.handleInput("g");
+  assert.match(stripTerminalSequences(explorer.render(60).join("\n")), /both\.ts\s+\+3 -1\s+↗/);
+  explorer.handleInput("\t");
+  assert.match(stripTerminalSequences(explorer.render(60).join("\n")), /both\.ts\s+\+7 -2\s+↗/);
+  const narrow = stripTerminalSequences(explorer.render(24).join("\n"));
+  assert.match(narrow, /both\.ts/);
+  assert.doesNotMatch(narrow, /\+7 -2/);
+  explorer.handleInput("\t");
+  explorer.handleInput("j");
+  explorer.handleInput("j");
+  assert.match(stripTerminalSequences(explorer.render(60).join("\n")), /conflict\.ts\s+binary\s+↗/);
+  explorer.handleInput("j");
+  assert.match(stripTerminalSequences(explorer.render(60).join("\n")), /new\.ts\s+new\s+↗/);
+  explorer.dispose();
+});
+
+test("compact headers keep readable tabs and action-first hints", async () => {
+  const explorer = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, { embedded: true, getTerminalRows: () => 24 });
+  await settle();
+  explorer.handleInput("g");
+  const lines = stripTerminalSequences(explorer.render(40).join("\n")).split("\n");
+  assert.match(lines[0] ?? "", /Sess Act \[Git\] Chk/);
+  assert.doesNotMatch(lines[0] ?? "", /WORKSPACE/);
+  assert.match(lines.at(-1) ?? "", /^.Tab Scope.*\? · Esc/);
+  explorer.dispose();
+
+  const overlay = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, { getTerminalRows: () => 24 });
+  await settle();
+  overlay.handleInput("g");
+  assert.doesNotMatch(stripTerminalSequences(overlay.render(40).at(-2) ?? ""), /z Zoom/);
+  overlay.dispose();
+});
+
 test("embedded Explorer supports mouse tabs, scopes, and row selection", async () => {
   const explorer = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, {
     embedded: true,
@@ -73,13 +148,13 @@ test("embedded Explorer supports mouse tabs, scopes, and row selection", async (
     activity: new ActivityTracker("/repo"),
   });
   await settle();
-  assert.equal(explorer.handleMouse(47, 0, 60), true);
-  assert.match(stripTerminalSequences(explorer.render(60).join("\n")), /\[CHANGES\]/);
+  assert.equal(explorer.handleMouse(53, 0, 60), true);
+  assert.match(stripTerminalSequences(explorer.render(60).join("\n")), /\[Git\]/);
   assert.equal(explorer.handleMouse(16, 1, 60), true);
   assert.equal(explorer.scope, "staged");
   explorer.handleMouse(5, 3, 60);
   assert.equal(explorer.selected, 1);
-  explorer.handleMouse(35, 0, 60);
+  explorer.handleMouse(48, 0, 60);
   assert.match(stripTerminalSequences(explorer.render(60).join("\n")), /No tool activity yet/);
   explorer.dispose();
 });
@@ -96,27 +171,38 @@ test("non-repositories hide Git UI and reveal Changes after git init", async () 
   const git = new GitStateController(exec, "/work", 5, 0);
   await git.refresh();
   const notices: string[] = [];
+  const activity = new ActivityTracker("/work");
+  activity.beginRequest();
+  activity.start({ type: "tool_execution_start", toolCallId: "nonrepo-edit", toolName: "edit", args: { path: "file.ts", edits: [] } }, 1);
+  activity.end({ type: "tool_execution_end", toolCallId: "nonrepo-edit", toolName: "edit", result: {}, isError: false }, 2);
+  activity.finalizeRequest();
   const explorer = new GitExplorer(git, exec, () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, {
     embedded: true,
     getTerminalRows: () => 40,
-    activity: new ActivityTracker("/work"),
+    activity,
     notify: (message) => notices.push(message),
   });
 
+  const review = stripTerminalSequences(explorer.render(100).join("\n"));
+  assert.match(review, /1 edited · 0 checks · 0 failed.*no Git review available/);
+  assert.doesNotMatch(review, /g Changes/);
   const local = stripTerminalSequences(explorer.render(60).join("\n"));
-  assert.match(local, /\[SESSION\]\s+Activity\s+Checks/);
+  assert.match(local, /\[Sess\]\s+Act\s+Chk/);
   assert.match(local, /New conversation/);
   assert.doesNotMatch(local, /Changes|CHANGES|WORKTREE|STAGED|\bDIFF\b|Git repository|Quickfix|e Open/);
   explorer.handleInput("g");
   assert.match(notices.at(-1) ?? "", /Git repository/);
   assert.doesNotMatch(notices.at(-1) ?? "", /git init/);
   assert.doesNotMatch(stripTerminalSequences(explorer.render(60).join("\n")), /Changes|CHANGES/);
+  explorer.handleInput("/");
+  assert.doesNotMatch(stripTerminalSequences(explorer.render(80).join("\n")), /f: files|type a message, path/);
+  explorer.handleInput("\x1b");
 
   initialized = true;
   await git.refresh();
   await settle();
   const repository = stripTerminalSequences(explorer.render(60).join("\n"));
-  assert.match(repository, /Session\s+Activity\s+\[CHANGES\]\s+Checks/);
+  assert.match(repository, /Sess\s+Act\s+\[Git\]\s+Chk/);
   assert.match(repository, /Working tree clean/);
   explorer.dispose();
   git.dispose();
@@ -352,6 +438,32 @@ test("safe Git actions stage, unstage, confirm discard, and guard untracked dele
   explorer.dispose();
 });
 
+test("tracked discard is blocked while the agent is running without blocking stage", async () => {
+  const calls: string[][] = [];
+  const exec: GitExec = async (_command, args) => {
+    calls.push(args);
+    return { stdout: args[0] === "diff" ? "@@ -1 +1 @@\n-old\n+new" : "", stderr: "", code: 0, killed: false };
+  };
+  const git = controller();
+  git.refresh = async () => {};
+  let confirmations = 0;
+  const explorer = new GitExplorer(git, exec, () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, {
+    confirm: async () => { confirmations++; return true; },
+    isAgentRunning: () => true,
+  });
+  await settle();
+  explorer.handleInput("g");
+  explorer.handleInput("s");
+  await settle();
+  assert.ok(calls.some((args) => args[0] === "add"), "stage must remain available");
+  explorer.handleInput("x");
+  await settle();
+  assert.equal(confirmations, 0);
+  assert.equal(calls.some((args) => args[0] === "restore" && args[1] === "--worktree"), false);
+  assert.match(stripTerminalSequences(explorer.render(70).join("\n")), /finish before discarding/);
+  explorer.dispose();
+});
+
 test("diff focus navigates and stages only the selected hunk", async () => {
   const patch = [
     "diff --git a/both.ts b/both.ts",
@@ -488,8 +600,9 @@ test("Explorer shows active NOW state, newest-touched files, and general activit
   activity.dispose();
 });
 
-test("Checks view lists diagnostics and opens Neovim at the exact location", async () => {
-  const activity = new ActivityTracker("/repo");
+test("Checks view lists diagnostics and opens Neovim at the exact repository-relative location", async () => {
+  const activity = new ActivityTracker("/repo/packages/app");
+  activity.setRoot("/repo");
   activity.start({ type: "tool_execution_start", toolCallId: "check", toolName: "bash", args: { command: "npm run typecheck" } }, 1);
   activity.end({ type: "tool_execution_end", toolCallId: "check", toolName: "bash", result: { content: [{ type: "text", text: "src/app.ts(12,5): error TS2322: Wrong type" }] }, isError: true }, 20);
   let result: unknown;
@@ -503,16 +616,115 @@ test("Checks view lists diagnostics and opens Neovim at the exact location", asy
   assert.match(checks, /CHECKS/);
   assert.match(checks, /PROBLEMS\s+1/);
   assert.match(checks, /CHECK DETAILS.*✕ ERROR/);
-  assert.match(checks, /src\/app\.ts:12:5/);
+  assert.match(checks, /packages\/app\/src\/app\.ts:12:5/);
   assert.match(checks, /Wrong type/);
   assert.ok(checks.indexOf("LOCATION") < checks.indexOf("SEVERITY") && checks.indexOf("SEVERITY") < checks.indexOf("SOURCE") && checks.indexOf("SOURCE") < checks.indexOf("MESSAGE") && checks.indexOf("MESSAGE") < checks.indexOf("COMMAND"));
   explorer.handleInput("e");
-  assert.deepEqual(result, { action: "edit", root: "/repo", path: "src/app.ts", line: 12, column: 5 });
+  assert.deepEqual(result, { action: "edit", root: "/repo", path: "packages/app/src/app.ts", line: 12, column: 5 });
   activity.dispose();
 });
 
-test("workspace quickfix combines exact diagnostics and every changed file", async () => {
+test("Checks rerun confirms sanitized full metadata, cancels safely, and blocks concurrent runs", async () => {
   const activity = new ActivityTracker("/repo");
+  const raw = `npm run typecheck && printf '${"x".repeat(220)}\n\x1b]0;owned\x07'`;
+  activity.start({ type: "tool_execution_start", toolCallId: "rerunnable", toolName: "bash", args: { command: raw, timeout: 9 } }, 1);
+  activity.end({ type: "tool_execution_end", toolCallId: "rerunnable", toolName: "bash", result: { content: [{ type: "text", text: "src/app.ts(2,3): error TS1: broken" }] }, isError: true }, 2);
+
+  let confirmation = "";
+  let executed = "";
+  const explorer = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, {
+    activity,
+    confirm: async (_title, message) => { confirmation = message; return true; },
+    rerunCheck: async (record) => { executed = record.rerun?.command ?? ""; },
+  });
+  explorer.handleInput("c");
+  explorer.handleInput("r");
+  await settle();
+  assert.equal(executed, raw, "execution receives the exact raw command, not truncated display text");
+  assert.match(confirmation, /Command:\nnpm run typecheck/);
+  assert.match(confirmation, new RegExp(`x{220}`), "confirmation contains the full command");
+  assert.match(confirmation, /Working directory:\n\/repo/);
+  assert.match(confirmation, /Timeout: 9s/);
+  assert.doesNotMatch(confirmation, /[\x1b\x07]|owned/);
+  explorer.dispose();
+
+  const noTimeoutActivity = new ActivityTracker("/repo");
+  noTimeoutActivity.start({ type: "tool_execution_start", toolCallId: "default-timeout", toolName: "bash", args: { command: "npm test" } }, 1);
+  noTimeoutActivity.end({ type: "tool_execution_end", toolCallId: "default-timeout", toolName: "bash", result: {}, isError: true }, 2);
+  let defaultConfirmation = "";
+  const defaultTimeout = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, {
+    activity: noTimeoutActivity,
+    confirm: async (_title, message) => { defaultConfirmation = message; return false; },
+    rerunCheck: async () => {},
+  });
+  defaultTimeout.handleInput("c");
+  defaultTimeout.handleInput("r");
+  await settle();
+  assert.match(defaultConfirmation, /Timeout: default/);
+  defaultTimeout.dispose();
+
+  let cancelledRuns = 0;
+  const cancelled = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, {
+    activity, confirm: async () => false, rerunCheck: async () => { cancelledRuns++; },
+  });
+  cancelled.handleInput("c");
+  cancelled.handleInput("r");
+  await settle();
+  assert.equal(cancelledRuns, 0);
+  cancelled.dispose();
+
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  const notices: string[] = [];
+  let concurrentRuns = 0;
+  const concurrent = new GitExplorer(controller(), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, {
+    activity,
+    confirm: async () => true,
+    notify: (message) => notices.push(message),
+    rerunCheck: async () => { concurrentRuns++; await pending; },
+  });
+  concurrent.handleInput("c");
+  concurrent.handleInput("r");
+  await settle();
+  concurrent.handleInput("r");
+  assert.equal(concurrentRuns, 1);
+  assert.match(notices.at(-1) ?? "", /already running/);
+  release();
+  await settle();
+  concurrent.dispose();
+});
+
+test("Checks rerun reports unavailable metadata while r keeps each other view's behavior", async () => {
+  const activity = new ActivityTracker("/repo");
+  activity.start({ type: "tool_execution_start", toolCallId: "legacy", toolName: "bash", args: { command: "npm test" } }, 1);
+  activity.end({ type: "tool_execution_end", toolCallId: "legacy", toolName: "bash", result: {}, isError: true }, 2);
+  delete (activity.records[0] as any).rerun;
+  const notices: string[] = [];
+  let refreshes = 0;
+  const git = controller();
+  git.refresh = async () => { refreshes++; };
+  const explorer = new GitExplorer(git, async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, {
+    activity, notify: (message) => notices.push(message),
+  });
+  explorer.handleInput("c");
+  explorer.handleInput("r");
+  assert.match(notices.at(-1) ?? "", /no stored bash command/);
+  assert.equal(refreshes, 0);
+  for (const view of ["h", "a", "g"]) {
+    explorer.handleInput(view);
+    explorer.handleInput("r");
+  }
+  assert.equal(refreshes, 3);
+  explorer.handleInput("/");
+  explorer.handleInput("r");
+  assert.equal(refreshes, 3, "Search keeps treating r as query input");
+  assert.match(stripTerminalSequences(explorer.render(80).join("\n")), /r/);
+  explorer.dispose();
+});
+
+test("workspace quickfix combines exact diagnostics and every changed file", async () => {
+  const activity = new ActivityTracker("/repo/packages/app");
+  activity.setRoot("/repo");
   activity.start({ type: "tool_execution_start", toolCallId: "quickfix-check", toolName: "bash", args: { command: "npm run typecheck" } }, 1);
   activity.end({ type: "tool_execution_end", toolCallId: "quickfix-check", toolName: "bash", result: { content: [{ type: "text", text: "src/app.ts(12,5): error TS2322: Wrong type" }] }, isError: true }, 20);
   let result: unknown;
@@ -520,7 +732,7 @@ test("workspace quickfix combines exact diagnostics and every changed file", asy
   await settle();
   explorer.handleInput("Q");
   assert.equal((result as any)?.action, "quickfix");
-  assert.deepEqual((result as any)?.entries[0], { path: "src/app.ts", line: 12, column: 5, message: "[LINT] Wrong type", severity: "error" });
+  assert.deepEqual((result as any)?.entries[0], { path: "packages/app/src/app.ts", line: 12, column: 5, message: "[LINT] Wrong type", severity: "error" });
   assert.ok((result as any)?.entries.some((entry: { path: string; severity: string }) => entry.path === "both.ts" && entry.severity === "info"));
   assert.ok((result as any)?.entries.some((entry: { path: string; severity: string }) => entry.path === "conflict.ts" && entry.severity === "error"));
   activity.dispose();
@@ -543,6 +755,94 @@ test("workspace search filters every rail source and opens exact results", async
   explorer.handleInput("\x0f");
   assert.deepEqual(result, { action: "edit", root: "/repo", path: "src/app.ts", line: 12, column: 5 });
   activity.dispose();
+});
+
+test("workspace search exposes the IME cursor and edits whole graphemes", () => {
+  const explorer = new GitExplorer(controller([]), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {});
+  explorer.focused = true;
+  explorer.handleInput("/");
+  assert.ok(explorer.render(100).some((line) => line.includes(CURSOR_MARKER)), "focused search emits Pi's cursor marker");
+
+  explorer.handleInput("e\u0301");
+  assert.match(stripTerminalSequences(explorer.render(100).join("\n")), /é/);
+  explorer.handleInput("\x7f");
+  assert.doesNotMatch(stripTerminalSequences(explorer.render(100).join("\n")), /é/);
+
+  explorer.handleInput("👨‍👩‍👧‍👦");
+  assert.match(stripTerminalSequences(explorer.render(100).join("\n")), /👨‍👩‍👧‍👦/);
+  explorer.handleInput("\x7f");
+  assert.doesNotMatch(stripTerminalSequences(explorer.render(100).join("\n")), /👨|👩|👧|👦/);
+});
+
+test("workspace search loads clean repository files on demand and opens exact paths", async () => {
+  const git = controller([]);
+  let loads = 0;
+  git.loadFiles = async () => { loads++; return { root: "/repo", paths: ["README.md", "src/new file.ts"] }; };
+  let result: unknown;
+  const explorer = new GitExplorer(git, async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, (value) => { result = value; });
+  explorer.handleInput("/");
+  await settle();
+  assert.match(stripTerminalSequences(explorer.render(100).join("\n")), /README\.md.*repository file/, "unfiltered search includes repository files");
+  for (const character of "f: README") explorer.handleInput(character);
+  assert.match(stripTerminalSequences(explorer.render(100).join("\n")), /README\.md.*repository file/);
+  explorer.handleInput("\r");
+  assert.deepEqual(result, { action: "edit", root: "/repo", path: "README.md" });
+  assert.equal(loads, 1);
+});
+
+test("workspace search sanitizes indexed path display but opens the exact raw path", async () => {
+  const rawPath = "bad\nname\t\x1b]0;owned\x07.ts";
+  const git = controller([]);
+  git.loadFiles = async () => ({ root: "/repo", paths: [rawPath] });
+  let result: unknown;
+  const plainTheme = { fg: (_color: string, text: string) => text, bg: (_color: string, text: string) => text, bold: (text: string) => text } as Theme;
+  const explorer = new GitExplorer(git, async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, plainTheme, () => {}, (value) => { result = value; }, { getTerminalRows: () => 24 });
+  explorer.handleInput("/");
+  await settle();
+  for (const character of "f: bad") explorer.handleInput(character);
+  const lines = explorer.render(60);
+  assert.ok(lines.length <= 24);
+  assert.ok(lines.every((line) => visibleWidth(line) <= 60));
+  assert.ok(lines.every((line) => !/[\r\n\t\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/.test(line)));
+  assert.doesNotMatch(lines.join("\n"), /owned/);
+  explorer.handleInput("\r");
+  assert.deepEqual(result, { action: "edit", root: "/repo", path: rawPath });
+});
+
+test("workspace search retains deleted status paths and change metadata", async () => {
+  const deleted: FileChange = { path: "deleted file.ts", index: "D", worktree: " ", staged: true, unstaged: false, untracked: false, conflicted: false };
+  const git = controller([deleted]);
+  git.loadFiles = async () => ({ root: "/repo", paths: ["README.md"] });
+  let result: unknown;
+  const explorer = new GitExplorer(git, async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, (value) => { result = value; });
+  explorer.handleInput("/");
+  await settle();
+  for (const character of "f: deleted") explorer.handleInput(character);
+  const rendered = stripTerminalSequences(explorer.render(100).join("\n"));
+  assert.match(rendered, /deleted file\.ts/);
+  assert.match(rendered, /repository file · staged/);
+  explorer.handleInput("e");
+  assert.deepEqual(result, { action: "edit", root: "/repo", path: "deleted file.ts" });
+});
+
+test("workspace search ignores stale file loads after a repository switch", async () => {
+  const git = controller([]);
+  let release!: (value: { root: string; paths: string[] }) => void;
+  const first = new Promise<{ root: string; paths: string[] }>((resolve) => { release = resolve; });
+  let calls = 0;
+  git.loadFiles = async () => ++calls === 1 ? first : { root: "/other", paths: ["CURRENT.md"] };
+  const explorer = new GitExplorer(git, async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {});
+  explorer.handleInput("/");
+  explorer.handleInput("\x1b");
+  git.state = { ...git.state as Extract<typeof git.state, { kind: "repo" }>, root: "/other" };
+  explorer.handleInput("/");
+  await settle();
+  release({ root: "/repo", paths: ["STALE.md"] });
+  await settle();
+  const rendered = stripTerminalSequences(explorer.render(100).join("\n"));
+  assert.match(rendered, /CURRENT\.md/);
+  assert.doesNotMatch(rendered, /STALE\.md/);
+  explorer.dispose();
 });
 
 test("workspace search Enter reveals a changed file without opening it", async () => {
@@ -587,6 +887,20 @@ test("workspace search finds conversation messages and reveals them in Session",
   const revealed = stripTerminalSequences(explorer.render(80).join("\n"));
   assert.match(revealed, /MESSAGE · YOU/);
   assert.match(revealed, /Make the workspace adaptive for general chat/);
+  explorer.dispose();
+});
+
+test("workspace search budgets records before repository files", () => {
+  const explorer = new GitExplorer(controller([]), async () => ({ stdout: "", stderr: "", code: 0, killed: false }), () => DEFAULT_SETTINGS, fakeTheme(), () => {}, () => {}, {
+    getSessionOverview: () => ({ title: "large", userTurns: 200, assistantMessages: 0, images: 0, messages: Array.from({ length: 200 }, (_, index) => ({ id: `m-${index}`, role: "user" as const, text: `message ${index}`, timestamp: index })) }),
+  });
+  const profile = explorer as unknown as { searchFiles: { root: string; paths: string[] }; searchDocuments(): Array<{ kind: string; title: string }> };
+  profile.searchFiles = { root: "/repo", paths: Array.from({ length: MAX_SEARCH_DOCUMENTS }, (_, index) => `file-${index}.ts`) };
+  const documents = profile.searchDocuments();
+  assert.equal(documents.length, MAX_SEARCH_DOCUMENTS);
+  assert.equal(documents.filter((document) => document.kind === "message").length, 200);
+  assert.equal(documents.filter((document) => document.kind === "file").length, MAX_SEARCH_DOCUMENTS - 200);
+  assert.equal(documents.some((document) => document.title === "file-9999.ts"), false);
   explorer.dispose();
 });
 
@@ -714,7 +1028,7 @@ test("Explorer row count responds to terminal height", async () => {
     await settle();
     const embeddedLines = embedded.render(50);
     assert.equal(embeddedLines.length, 24);
-    assert.match(stripTerminalSequences(embeddedLines[0] ?? ""), /WORKSPACE/);
+    assert.match(stripTerminalSequences(embeddedLines[0] ?? ""), /\[Sess\] Act Git Chk/);
     assert.doesNotMatch(stripTerminalSequences(embeddedLines[0] ?? ""), /[╭┌]/);
     assert.ok(embeddedLines.some((line) => stripTerminalSequences(line).startsWith("⋮")), "integrated rail must expose a resize handle");
     embedded.dispose();

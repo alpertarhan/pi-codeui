@@ -4,6 +4,7 @@ import type {
   ToolExecutionEndEvent,
   ToolExecutionStartEvent,
   ToolExecutionUpdateEvent,
+  SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 import type { FileChange } from "./git/types.ts";
 import { sanitizeTerminalLine } from "./terminal.ts";
@@ -22,6 +23,20 @@ export interface Diagnostic {
   message: string;
 }
 
+export interface ActivityRerun {
+  command: string;
+  cwd: string;
+  timeout?: number;
+}
+
+export interface ActivityRerunResult {
+  stdout: string;
+  stderr: string;
+  code: number;
+  killed: boolean;
+  error?: unknown;
+}
+
 export interface ActivityRecord {
   id: string;
   toolName: string;
@@ -36,9 +51,19 @@ export interface ActivityRecord {
   how: string;
   result: string;
   diagnostics?: Diagnostic[];
+  rerun?: ActivityRerun;
 }
 
 export type ActivityListener = () => void;
+
+export interface LatestRequestSummary {
+  id: number;
+  active: boolean;
+  editedPaths: readonly string[];
+  editedPathCount: number;
+  checkCount: number;
+  failureCount: number;
+}
 
 type ToolArgs = Record<string, unknown>;
 
@@ -68,22 +93,25 @@ const resultText = (result: unknown): string | undefined => {
 };
 
 const validationKinds = new Set<ActivityKind>(["test", "build", "lint"]);
+const checkKey = (record: ActivityRecord): string => record.rerun
+  ? `${record.kind}:${record.rerun.cwd}:${record.rerun.timeout ?? ""}:${record.rerun.command}`
+  : `${record.kind}:${record.how}`;
 
-function normalizeDiagnosticPath(cwd: string, candidate: string): string | undefined {
+function normalizeDiagnosticPath(cwd: string, root: string, candidate: string): string | undefined {
   const cleaned = candidate.trim().replace(/^[>(❯)\s]+/, "").replace(/^file:\/\//, "").replace(/^['"]|['"]$/g, "");
   if (!cleaned) return undefined;
   const absolute = resolve(cwd, cleaned);
-  const fromCwd = relative(cwd, absolute);
-  if (!fromCwd || fromCwd === ".." || fromCwd.startsWith(`..${sep}`) || isAbsolute(fromCwd)) return undefined;
-  return sanitizeTerminalLine(fromCwd.split(sep).join("/"));
+  const fromRoot = relative(root, absolute);
+  if (!fromRoot || fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) return undefined;
+  return sanitizeTerminalLine(fromRoot.split(sep).join("/"));
 }
 
-export function parseDiagnostics(output: string, cwd: string, source: Diagnostic["source"], checkId: string = source): Diagnostic[] {
+export function parseDiagnostics(output: string, cwd: string, source: Diagnostic["source"], checkId: string = source, root = cwd): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   const seen = new Set<string>();
   let eslintPath: string | undefined;
   const push = (candidate: string, line: string, column: string | undefined, severity: string | undefined, message: string): void => {
-    const path = normalizeDiagnosticPath(cwd, candidate);
+    const path = normalizeDiagnosticPath(cwd, root, candidate);
     const lineNumber = Number(line);
     const columnNumber = Number(column ?? 1);
     if (!path || !Number.isInteger(lineNumber) || lineNumber < 1 || !Number.isInteger(columnNumber) || columnNumber < 1) return;
@@ -125,17 +153,40 @@ export function parseDiagnostics(output: string, cwd: string, source: Diagnostic
 
 export class ActivityTracker {
   private readonly cwd: string;
+  private root: string;
   private readonly maxRecords: number;
   private readonly listeners = new Set<ActivityListener>();
   private readonly history: ActivityRecord[] = [];
   private readonly touchedAt = new Map<string, number>();
+  private readonly requestByTool = new Map<string, number>();
+  private latest: { id: number; active: boolean; editedPaths: Set<string>; checkCount: number; failureCount: number } | undefined;
+  private nextRequestId = 0;
+  private nextRerunId = 0;
+  private rerunRunning = false;
   private narrative = "Waiting for the next action";
   private revision = 0;
   private disposed = false;
 
   constructor(cwd: string, maxRecords = 100) {
-    this.cwd = cwd;
+    this.cwd = resolve(cwd);
+    this.root = this.cwd;
     this.maxRecords = maxRecords;
+  }
+
+  setRoot(root: string): void {
+    const previous = this.root;
+    this.root = resolve(root);
+    if (this.root === previous) return;
+    const rebase = (path: string): string => this.pathFromRoot(resolve(previous, path), path);
+    for (const record of this.history) {
+      if (record.path) record.path = rebase(record.path);
+      for (const diagnostic of record.diagnostics ?? []) diagnostic.path = rebase(diagnostic.path);
+    }
+    const touched = [...this.touchedAt];
+    this.touchedAt.clear();
+    for (const [path, timestamp] of touched) this.touchedAt.set(rebase(path), timestamp);
+    if (this.latest) this.latest.editedPaths = new Set([...this.latest.editedPaths].map(rebase));
+    this.emit();
   }
 
   get records(): readonly ActivityRecord[] {
@@ -146,6 +197,16 @@ export class ActivityTracker {
     return this.revision;
   }
 
+  get isRerunning(): boolean {
+    return this.rerunRunning;
+  }
+
+  get latestRequest(): LatestRequestSummary | undefined {
+    if (!this.latest) return undefined;
+    const editedPaths = [...this.latest.editedPaths];
+    return { ...this.latest, editedPaths, editedPathCount: editedPaths.length };
+  }
+
   get current(): ActivityRecord | undefined {
     return this.history.find((record) => record.status === "running") ?? this.history[0];
   }
@@ -153,7 +214,7 @@ export class ActivityTracker {
   get checks(): readonly ActivityRecord[] {
     const seen = new Set<string>();
     return this.history.filter((record) => {
-      const key = `${record.kind}:${record.how}`;
+      const key = checkKey(record);
       if (!validationKinds.has(record.kind) || seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -164,7 +225,7 @@ export class ActivityTracker {
     const seen = new Set<string>();
     const current: Diagnostic[] = [];
     for (const record of this.history) {
-      const key = `${record.kind}:${record.how}`;
+      const key = checkKey(record);
       if (!validationKinds.has(record.kind) || record.status === "running" || seen.has(key)) continue;
       seen.add(key);
       current.push(...(record.diagnostics ?? []));
@@ -175,6 +236,98 @@ export class ActivityTracker {
   onChange(listener: ActivityListener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  beginRequest(): void {
+    this.latest = { id: ++this.nextRequestId, active: true, editedPaths: new Set(), checkCount: 0, failureCount: 0 };
+    this.emit();
+  }
+
+  finalizeRequest(): void {
+    if (!this.latest?.active) return;
+    this.latest.active = false;
+    this.emit();
+  }
+
+  hydrate(entries: readonly SessionEntry[]): void {
+    type Call = { id: string; name: string; args: ToolArgs; why: string; timestamp: number; entryIndex: number; partIndex: number };
+    type Result = { name: string; content: unknown; isError: boolean; timestamp: number };
+    const calls: Call[] = [];
+    const results = new Map<string, Result>();
+    let lastUserIndex = -1;
+    let narrative = this.narrative;
+    const timestamp = (entry: SessionEntry, message: { timestamp?: unknown }, entryFirst = false): number => {
+      const messageTime = typeof message.timestamp === "number" ? message.timestamp : NaN;
+      const entryTime = Date.parse(entry.timestamp);
+      if (entryFirst && Number.isFinite(entryTime)) return entryTime;
+      return Number.isFinite(messageTime) ? messageTime : Number.isFinite(entryTime) ? entryTime : 0;
+    };
+
+    entries.forEach((entry, entryIndex) => {
+      if (entry.type !== "message") return;
+      const message = entry.message as { role?: string; content?: unknown; toolCallId?: unknown; toolName?: unknown; isError?: unknown; timestamp?: unknown };
+      if (message.role === "user") {
+        lastUserIndex = entryIndex;
+        return;
+      }
+      if (message.role === "assistant" && Array.isArray(message.content)) {
+        const text = message.content
+          .filter((part) => part && typeof part === "object" && (part as { type?: string }).type === "text")
+          .map((part) => String((part as { text?: unknown }).text ?? ""))
+          .join(" ");
+        if (text.trim()) narrative = compact(text, 280);
+        message.content.forEach((part, partIndex) => {
+          if (!part || typeof part !== "object" || (part as { type?: string }).type !== "toolCall") return;
+          const call = part as { id?: unknown; name?: unknown; arguments?: unknown };
+          if (typeof call.id !== "string" || typeof call.name !== "string") return;
+          calls.push({
+            id: call.id,
+            name: call.name,
+            args: call.arguments && typeof call.arguments === "object" ? call.arguments as ToolArgs : {},
+            why: narrative,
+            timestamp: timestamp(entry, message, true),
+            entryIndex,
+            partIndex,
+          });
+        });
+        return;
+      }
+      if (message.role === "toolResult" && typeof message.toolCallId === "string" && typeof message.toolName === "string") {
+        results.set(message.toolCallId, {
+          name: message.toolName,
+          content: message.content,
+          isError: message.isError === true,
+          timestamp: timestamp(entry, message),
+        });
+      }
+    });
+
+    const completed = calls
+      .filter((call) => results.has(call.id) && !this.history.some((record) => record.id === call.id))
+      .sort((left, right) => left.timestamp - right.timestamp || left.entryIndex - right.entryIndex || left.partIndex - right.partIndex)
+      .slice(-this.maxRecords);
+    let requestStarted = false;
+    for (const call of completed) {
+      if (!requestStarted && lastUserIndex >= 0 && call.entryIndex > lastUserIndex) {
+        this.beginRequest();
+        requestStarted = true;
+      }
+      this.narrative = call.why;
+      this.start({ type: "tool_execution_start", toolCallId: call.id, toolName: call.name, args: call.args }, call.timestamp);
+      const result = results.get(call.id)!;
+      this.end({
+        type: "tool_execution_end",
+        toolCallId: call.id,
+        toolName: result.name,
+        result: { content: result.content },
+        isError: result.isError,
+      }, result.timestamp);
+    }
+    if (lastUserIndex >= 0) {
+      if (!requestStarted) this.beginRequest();
+      this.finalizeRequest();
+    }
+    this.narrative = narrative;
   }
 
   beginTurn(): void {
@@ -193,6 +346,7 @@ export class ActivityTracker {
   }
 
   start(event: ToolExecutionStartEvent, now = Date.now()): void {
+    if (this.history.some((record) => record.id === event.toolCallId)) return;
     const args = event.args && typeof event.args === "object" ? event.args as ToolArgs : {};
     const path = typeof args.path === "string" ? this.normalizePath(args.path) : undefined;
     const description = this.describe(event.toolName, args, path);
@@ -207,9 +361,17 @@ export class ActivityTracker {
       why: this.narrative,
       how: description.how,
       result: "In progress",
+      ...(event.toolName === "bash" && validationKinds.has(description.kind) && typeof args.command === "string" ? {
+        rerun: {
+          command: args.command,
+          cwd: this.cwd,
+          ...(typeof args.timeout === "number" && Number.isFinite(args.timeout) && args.timeout > 0 ? { timeout: args.timeout } : {}),
+        },
+      } : {}),
     };
     this.history.unshift(record);
     if (this.history.length > this.maxRecords) this.history.length = this.maxRecords;
+    if (this.latest?.active) this.requestByTool.set(record.id, this.latest.id);
     if (path && (record.kind === "edit" || record.kind === "write")) this.touchedAt.set(path, now);
     this.emit();
   }
@@ -223,16 +385,66 @@ export class ActivityTracker {
 
   end(event: ToolExecutionEndEvent, now = Date.now()): void {
     const record = this.history.find((item) => item.id === event.toolCallId);
-    if (!record) return;
+    const requestId = this.requestByTool.get(event.toolCallId);
+    this.requestByTool.delete(event.toolCallId);
+    if (!record || record.status !== "running") return;
     record.status = event.isError ? "error" : "success";
     record.endedAt = now;
     record.durationMs = Math.max(0, now - record.startedAt);
     const output = resultOutput(event.result);
     const detail = resultText(event.result);
     record.result = event.isError ? `Failed${detail ? ` · ${detail}` : ""}` : `Completed in ${formatDuration(record.durationMs)}${detail ? ` · ${detail}` : ""}`;
-    if (validationKinds.has(record.kind)) record.diagnostics = parseDiagnostics(output, this.cwd, record.kind as Diagnostic["source"], record.id);
+    if (validationKinds.has(record.kind)) record.diagnostics = parseDiagnostics(output, this.cwd, record.kind as Diagnostic["source"], record.id, this.root);
     if (record.path && (record.kind === "edit" || record.kind === "write")) this.touchedAt.set(record.path, now);
+    const latest = requestId !== undefined && this.latest?.id === requestId ? this.latest : undefined;
+    if (latest) {
+      if (!event.isError && record.path && (record.kind === "edit" || record.kind === "write")) latest.editedPaths.add(record.path);
+      if (validationKinds.has(record.kind)) {
+        latest.checkCount++;
+        if (event.isError) latest.failureCount++;
+      }
+    }
     this.emit();
+  }
+
+  async rerun(record: ActivityRecord, execute: (rerun: ActivityRerun) => Promise<ActivityRerunResult>): Promise<ActivityRecord | undefined> {
+    if (!record.rerun || !validationKinds.has(record.kind) || this.rerunRunning) return undefined;
+    this.rerunRunning = true;
+    const id = `rerun-${Date.now()}-${++this.nextRerunId}`;
+    const timeout = Number.isFinite(record.rerun.timeout) && record.rerun.timeout! > 0 ? record.rerun.timeout : undefined;
+    const rerun = { command: record.rerun.command, cwd: record.rerun.cwd, ...(timeout === undefined ? {} : { timeout }) };
+    try {
+      this.start({
+        type: "tool_execution_start",
+        toolCallId: id,
+        toolName: "bash",
+        args: { command: rerun.command, ...(rerun.timeout === undefined ? {} : { timeout: rerun.timeout }) },
+      });
+      try {
+        const result = await execute(rerun);
+        const error = result.error instanceof Error ? result.error.message : result.error === undefined ? "" : String(result.error);
+        const output = [result.stdout, result.stderr, error].filter(Boolean).join("\n");
+        this.end({
+          type: "tool_execution_end",
+          toolCallId: id,
+          toolName: "bash",
+          result: { content: output ? [{ type: "text", text: output }] : [] },
+          isError: result.code !== 0 || result.killed || Boolean(result.error),
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.end({
+          type: "tool_execution_end",
+          toolCallId: id,
+          toolName: "bash",
+          result: { content: [{ type: "text", text: message }] },
+          isError: true,
+        });
+      }
+      return this.history.find((item) => item.id === id);
+    } finally {
+      this.rerunRunning = false;
+    }
   }
 
   orderFiles(files: readonly FileChange[]): FileChange[] {
@@ -257,18 +469,22 @@ export class ActivityTracker {
 
   dispose(): void {
     this.disposed = true;
+    this.requestByTool.clear();
     this.listeners.clear();
   }
 
   private pathsMatch(left: string, right: string): boolean {
-    return left === right || left.endsWith(`/${right}`) || right.endsWith(`/${left}`);
+    return left === right;
   }
 
   private normalizePath(path: string): string {
-    const absolute = resolve(this.cwd, path);
-    const fromCwd = relative(this.cwd, absolute);
-    const inside = fromCwd !== ".." && !fromCwd.startsWith(`..${sep}`) && !isAbsolute(fromCwd);
-    return sanitizeTerminalLine(inside ? (fromCwd || path).split(sep).join("/") : path);
+    return this.pathFromRoot(resolve(this.cwd, path), path);
+  }
+
+  private pathFromRoot(absolute: string, fallback: string): string {
+    const fromRoot = relative(this.root, absolute);
+    const inside = fromRoot !== ".." && !fromRoot.startsWith(`..${sep}`) && !isAbsolute(fromRoot);
+    return sanitizeTerminalLine(inside ? (fromRoot || fallback).split(sep).join("/") : fallback);
   }
 
   private describe(toolName: string, args: ToolArgs, path?: string): Pick<ActivityRecord, "kind" | "what" | "how"> {
@@ -289,7 +505,7 @@ export class ActivityTracker {
     if (toolName === "bash") {
       const command = compact(args.command, 160);
       const lower = command.toLowerCase();
-      const timeout = args.timeout ? ` · timeout ${args.timeout}ms` : "";
+      const timeout = args.timeout ? ` · timeout ${args.timeout}s` : "";
       if (/((npm|pnpm|yarn|bun)\s+(run\s+)?test|node\s+--test|vitest|jest|pytest|cargo\s+test|go\s+test)/.test(lower)) {
         return { kind: "test", what: "Running the test suite", how: `${command}${timeout}` };
       }

@@ -7,7 +7,7 @@ const json = async (path: string) => JSON.parse(await readFile(new URL(path, imp
 test("v1 package metadata exposes the canonical Pi package and gallery contract", async () => {
   const pkg = await json("../package.json");
   assert.equal(pkg.name, "pi-codeui");
-  assert.equal(pkg.version, "1.1.0");
+  assert.equal(pkg.version, "1.2.0");
   assert.equal(pkg.license, "MIT");
   assert.deepEqual(pkg.repository, { type: "git", url: "git+https://github.com/alpertarhan/pi-codeui.git" });
   assert.equal(pkg.homepage, "https://github.com/alpertarhan/pi-codeui#readme");
@@ -37,6 +37,7 @@ test("schema and install documentation use the canonical unscoped name", async (
   const schema = await json("../schemas/codeui.settings.schema.json");
   const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
   assert.equal(schema.$id, "https://unpkg.com/pi-codeui/schemas/codeui.settings.schema.json");
+  assert.equal(schema.properties.appearance.properties.theme.default, "inherit");
   assert.match(readme, /pi install npm:pi-codeui/);
   assert.match(readme, /git:github\.com\/alpertarhan\/pi-codeui/);
   assert.doesNotMatch(readme, /npm:@pi-codeui\/core/);

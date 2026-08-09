@@ -28,7 +28,10 @@ No settings migration is required from 0.13.x:
 - Global settings remain at `~/.pi/agent/codeui.settings.json`.
 - Trusted project settings remain at `<repo>/.pi/codeui.settings.json`.
 - Repository workspace state remains at `~/.pi/agent/codeui.workspace-state.json`.
-- Existing theme, glyph, editor, Git, panel-width, scope, and dock preferences are retained. Active tabs are now session-local so new conversations open on Session.
+- Existing explicit theme, glyph, editor, Git, panel-width, scope, and dock preferences are retained.
+- Active tabs are session-local, so new and resumed runtimes open on Session. Activity and Checks hydrate completed tool history from the resumed session.
+
+> **Since v1.2.0:** the built-in theme default is `inherit`, so installations without an explicit `appearance.theme` preserve the active Pi host theme. Bundled `codeui-midnight` is opt-in, and CodeUI restores an explicitly selected theme only while it still owns that selection.
 
 The schema URL changes only because of the package rename:
 

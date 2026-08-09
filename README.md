@@ -8,107 +8,100 @@
 
 **A conversation-first, code-aware terminal workspace for [Pi Coding Agent](https://pi.dev).**
 
-Keep chat at the center while Git changes, tool activity, checks, search, session resources, and Vim/Neovim workflows stay visible in a keyboard-first side rail.
+Keep chat central while Git changes, tool activity, checks, repository search, session resources, and Vim/Neovim workflows stay visible in a keyboard-first rail.
 
-![Actual pi-codeui fullscreen terminal workspace](./docs/screenshots/pi-codeui-fullscreen.png)
+![Populated pi-codeui review workspace](./docs/screenshots/pi-codeui-review.png)
 
-> Actual fullscreen TUI capture. Transcript content, visible tabs, colors, and spacing vary with the active session, terminal width, installed extensions, and theme.
+> Actual fullscreen TUI capture. Content, colors, spacing, and available tabs vary by session, terminal, installed extensions, repository, and host theme. An older [clean fullscreen capture](./docs/screenshots/pi-codeui-fullscreen.png) is also available.
 
 ## Why pi-codeui?
 
-Pi already provides the conversation and agent runtime. pi-codeui adds persistent workspace context without replacing that flow:
+- **Session-first:** each conversation opens on its overview, including reliable resources and turn/image/action counts.
+- **Code-aware:** changed files include separate Worktree/Staged line stats, diffs, diagnostics, safe Git actions, and exact editor navigation.
+- **Review-focused:** Changes can show all workspace changes or only files successfully changed by direct `edit`/`write` calls in the latest request, with its edit/check/failure summary.
+- **Resumable:** Activity and Checks hydrate completed tool history when a session is resumed.
+- **Repository-wide search:** search messages, Activity, Checks, every tracked file, and non-ignored untracked files—not only changed files.
+- **Terminal-native:** keyboard/mouse controls, responsive layouts, IME-safe grapheme input, Unicode/ASCII fallbacks, and Pi theme tokens.
+- **Fail-closed:** destructive or compatibility-sensitive actions are guarded, confirmed, or disabled when safety is uncertain.
 
-- **Session-first:** every conversation opens on a calm overview instead of an empty Git panel.
-- **Readable conversation identity:** display-only `You` and `Pi · working` labels clarify the chat flow without replacing Pi's native transcript or tools.
-- **Code-aware:** safe Git actions, diffs, diagnostics, quickfix export, and exact editor navigation appear when relevant.
-- **General-purpose:** research, files, exports, decisions, and other tool activity are useful even outside a Git repository.
-- **Terminal-native:** keyboard and mouse controls, responsive widths, Unicode/ASCII fallbacks, and native Pi themes.
-- **Fail-closed:** destructive or compatibility-sensitive behavior is guarded, confirmed, or disabled when safety is uncertain.
-- **Extension-friendly:** compatible Pi widgets can share the rail instead of consuming transcript height.
+The latest-request filter is review scope, not an ownership claim. It includes only successful direct `edit` and `write` tool results associated with the latest request; Bash changes, manual edits, failed calls, and inferred authorship are excluded.
 
 ## Requirements
 
 - Node.js **22.19.0+**
 - Pi Coding Agent **0.84.x**
-- Git for the Changes workspace; general chat, Activity, Checks, and Search also work outside Git repositories
-- Optional: Vim or Neovim for external file and quickfix navigation
+- Git for Changes and repository-file Search; Session, Activity, Checks, and message search also work outside repositories
+- Optional Vim or Neovim for external file and quickfix navigation
 
 ## Install
 
-From npm:
-
 ```sh
 pi install npm:pi-codeui
-```
-
-From the latest GitHub source:
-
-```sh
+# or latest GitHub source
 pi install git:github.com/alpertarhan/pi-codeui
 ```
 
-Restart Pi or run `/reload`, then focus the workspace with:
+Restart Pi or run `/reload`, then focus the workspace with `/codeui` or `Ctrl+Shift+G`.
 
-```text
-/codeui
-```
+CodeUI preserves the active Pi theme by default. The bundled **CodeUI Midnight** theme is recommended but opt-in: select `codeui-midnight` with Pi's `/theme` picker, or set it explicitly in CodeUI settings.
 
-Use Pi's `/theme` picker to select the bundled `codeui-midnight` theme if desired.
-
-## Workspace surfaces
+## Workspace
 
 | Surface | Purpose |
 | --- | --- |
-| **Session** | Conversation title, turn/image/action counts, current status, and reliable session resources |
-| **Activity** | Newest-first tool timeline with What, Context, How, Result, status, and timing |
-| **Changes** | Worktree/Staged files, diffs, guarded Git actions, commits, and quickfix export |
-| **Checks** | Latest test, lint, typecheck, and build state with parsed diagnostics |
-| **Search** | Unified fuzzy search across messages, files, activity, and checks |
+| **Session** | Conversation title, status, counts, latest-request summary, and reliable resources |
+| **Activity** | Newest-first tool history with What, Context, How, Result, status, timing, and Bash timeout in seconds |
+| **Changes** | Worktree/Staged files, per-file numstats, Latest/All review scope, diffs, guarded actions, commits, and quickfix |
+| **Checks** | Current test/lint/typecheck/build results, parsed diagnostics, and confirmed reruns |
+| **Search** | Fuzzy search across messages, repository files, Activity, and Checks; limit controlled by `maxSearchRecords` |
 | **Extensions** | Docked compatible Pi widgets such as todo/status components |
 
-The global header shows project/session identity and one agent state. The footer prioritizes working directory, token flow, turn, context pressure, model, and thinking level without duplicating rail content. When files are dirty, a compact Changes strip stays beside the prompt even while the right rail is open; clean workspaces remain quiet.
+The header uses compact `Sess` / `Act` / `Git` / `Chk` labels when space is tight. Footer hints put available actions first. A compact Changes strip remains beside the prompt only while files are dirty.
+
+### Layout and width
+
+With the default `explorer.layout: "split"`, the persistent split is used only in Pi's **fullscreen** TUI at **120 columns or wider** and when the compatible layout capability is available. Otherwise `/codeui` falls back to a right overlay at or above the threshold, or a transient full-width dashboard below it. Explicit `layout: "overlay"` always uses the fallback flow.
+
+Split resizing is workspace-persistent. Review zoom is not: `z` temporarily toggles a 50% rail and resets when focus returns to the prompt, the workspace deactivates, or CodeUI reloads.
 
 ## Essential controls
 
-| Key | Action |
-| --- | --- |
-| `Ctrl+Shift+G` or `/codeui` | Focus/open the workspace |
-| `h` / `a` / `g` / `c` | Session / Activity / Changes / Checks |
-| `/` | Search messages, files, activity, and checks |
-| `m:` / `f:` / `a:` / `c:` | Restrict search to one source |
-| `j` / `k` or arrows | Move selection |
-| `Enter` | Reveal a search result or switch list/detail focus |
-| `e` | Open the selected file/location in the external editor |
-| `Tab` | Switch Worktree/Staged scope in Changes |
-| `s` | Stage/unstage the selected file or hunk |
-| `m` | Open the selected file action menu |
-| `x` | Confirm and discard safe tracked worktree changes |
-| `C` | Open the guarded staged-change commit composer |
-| `Q` | Open workspace locations in native Vim/Neovim quickfix |
-| `w` | Collapse/expand the Extensions dock |
-| `[` / `]` / `0` | Shrink / grow / reset split width |
-| `?` | Contextual workspace help |
-| `Esc` or `q` | Return focus to Pi's editor |
+| Key | Scope | Action |
+| --- | --- | --- |
+| `Ctrl+Shift+G` or `/codeui` | Global | Focus/open workspace |
+| `h` / `a` / `g` / `c` | Workspace | Session / Activity / Changes / Checks |
+| `/` | Workspace | Search conversation, repository files, Activity, and Checks |
+| `m:` / `f:` / `a:` / `c:` | Search | Restrict results to messages / files / Activity / Checks |
+| `j` / `k`, arrows | Lists/details | Move selection or scroll |
+| `Enter` | Lists/search | Switch list/detail focus or reveal result |
+| `e` | Located result | Open in configured external editor |
+| `Tab` | Changes | Switch Worktree/Staged |
+| `t` | Changes | Toggle latest-request successful edits / all workspace changes |
+| `s` | Changes | Stage/unstage selected file or hunk |
+| `n` / `p` | Changes diff | Select next/previous hunk |
+| `m` / `x` / `C` | Changes | Action menu / confirmed tracked discard / commit staged changes |
+| `Q` | Changes/Checks | Open workspace locations in Vim/Neovim quickfix |
+| `r` | Checks | Confirm and rerun selected stored check |
+| `r` | Other views | Refresh Git state |
+| `w` | Workspace | Collapse/expand Extensions dock |
+| `[` / `]` / `0` | Fullscreen split only | Shrink / grow / reset persistent rail width |
+| `z` | Fullscreen split only | Toggle temporary review zoom |
+| `?` | Workspace | Contextual help |
+| `Esc` or `q` | Workspace | Return focus to Pi's editor |
 
-Primary actions also support mouse selection. Drag the centered divider to resize it; double-click it to reset the configured width.
+Primary actions support mouse selection. Drag the fullscreen divider to resize; double-click it to reset.
+
+Checks rerun only Bash-based test/build/lint records. Before execution, CodeUI displays the sanitized **full** stored command, working directory, and finite timeout (seconds) for confirmation. Approval executes the original untruncated command through the documented shell boundary described under [Safety](#safety-and-compatibility).
 
 ## Configuration
 
-Settings are merged in this order, with later valid fields winning:
-
-1. built-in defaults;
-2. global: `~/.pi/agent/codeui.settings.json` (respects `PI_CODING_AGENT_DIR`);
-3. trusted project: `<cwd>/.pi/codeui.settings.json`.
-
-Project settings are ignored unless Pi marks the project trusted. Unknown or invalid fields warn and inherit the previous valid value; malformed live edits preserve the last valid settings.
-
-Start with the bundled schema:
+Settings merge in order: built-in defaults, global `~/.pi/agent/codeui.settings.json` (respecting `PI_CODING_AGENT_DIR`), then trusted-project `<cwd>/.pi/codeui.settings.json`. Untrusted project settings are ignored. Invalid live edits preserve the last valid settings.
 
 ```json
 {
   "$schema": "https://unpkg.com/pi-codeui/schemas/codeui.settings.schema.json",
   "appearance": {
-    "theme": "codeui-midnight",
+    "theme": "inherit",
     "density": "compact",
     "borders": "rounded",
     "glyphPreset": "nerd",
@@ -124,9 +117,10 @@ Start with the bundled schema:
     "layout": "split",
     "splitWidth": "34%",
     "overlayWidth": "52%",
-    "minOverlayColumns": 100,
+    "minOverlayColumns": 120,
     "dockWidgets": true,
-    "maxDockRows": 12
+    "maxDockRows": 12,
+    "maxSearchRecords": 50
   },
   "vim": {
     "enabled": false,
@@ -136,24 +130,15 @@ Start with the bundled schema:
 }
 ```
 
-The complete schema is [`schemas/codeui.settings.schema.json`](./schemas/codeui.settings.schema.json). `/codeui-doctor` reports configuration/trust, glyphs, runtime, terminal viewport, repository, split compatibility, persisted workspace state, Activity, diagnostics, and editor ownership.
+`maxSearchRecords` accepts **1–200**. See the complete [`schemas/codeui.settings.schema.json`](./schemas/codeui.settings.schema.json). `/codeui-doctor` reports configuration/trust, glyphs, runtime, terminal viewport, repository, split compatibility, persisted state, Activity, diagnostics, latest-request summary, and editor ownership. There is no `/codeui-settings` command yet; edit the JSON files directly.
 
-### Appearance and terminal support
+### Themes and terminals
 
-pi-codeui uses Pi's native theme tokens rather than maintaining a second color system. `codeui-midnight` is bundled; `inherit` or any installed Pi theme also works.
+`appearance.theme: "inherit"` leaves the host theme untouched. An explicit theme makes CodeUI select it; CodeUI restores the previous host theme only while it still owns that selection, so a later user/extension theme change is preserved. `codeui-midnight` is bundled and opt-in.
 
-Glyph presets:
+Glyph presets are `nerd`, `unicode`, `ascii`, and `custom`. The terminal owns font family, size, ligatures, and rendering; see [`docs/terminal-profiles.md`](./docs/terminal-profiles.md).
 
-- `nerd` — best with a Nerd Font;
-- `unicode` — portable Unicode fallback;
-- `ascii` — conservative terminal fallback;
-- `custom` — fallback preset plus icon overrides.
-
-The terminal owns font family, size, ligatures, and rendering. See [`docs/terminal-profiles.md`](./docs/terminal-profiles.md) for Ghostty, Kitty, and WezTerm examples.
-
-### Chat-focused Pi settings
-
-For a quieter conversation surface closer to the screenshot, these optional **Pi host settings** belong in `~/.pi/agent/settings.json` (not `codeui.settings.json`):
+Optional Pi host settings for a quieter chat surface belong in `~/.pi/agent/settings.json`, not CodeUI settings:
 
 ```json
 {
@@ -163,30 +148,32 @@ For a quieter conversation surface closer to the screenshot, these optional **Pi
 }
 ```
 
-`quietStartup` hides the startup resource inventory; pi-codeui does not rewrite that native transcript content. Set `chrome.messageLabels` to `false` if you prefer Pi's unlabelled native messages.
+## Vim and Neovim
 
-### Vim and Neovim
+Embedded Vim mode is optional and deliberately small: Normal mode supports `h/j/k/l`, `w/b`, `0/$`, `x`, `i`, and `a`. Toggle it for the session with `/codeui-vim`.
 
-Embedded Vim mode is intentionally small and optional. Normal mode supports `h/j/k/l`, `w/b`, `0/$`, `x`, `i`, and `a`; it is not a Vim emulator. Toggle it for the current session with `/codeui-vim`.
-
-Pi's native `Ctrl+G` flow edits the prompt with Pi's configured external editor. Separately, `e` and `Q` suspend the TUI, invoke pi-codeui's direct argv-based `vim.externalEditor`, resume Pi, and refresh Git state. Commands are never constructed through a shell.
+Pi's native `Ctrl+G` edits the prompt with Pi's configured external editor. CodeUI's `e` and `Q` use direct argv-based `vim.externalEditor` execution, with no shell interpolation of file paths.
 
 ## Safety and compatibility
 
-Git operations use direct argv execution and repository-relative validation. Stage/unstage, tracked-file discard, hunk actions, commits, and quickfix export are guarded by the current repository state. Unsupported binary, truncated, untracked, renamed, conflicted, or whitespace-filtered hunk operations fail closed.
+Git and editor operations use direct argv execution and repository-relative validation. Stage/unstage, tracked-file discard, hunk actions, commits, and quickfix export are guarded by current repository state. Discard is blocked for the whole time the agent is active, checked again after confirmation, and unavailable for untracked, renamed, or conflicted files. Unsafe hunk operations fail closed.
 
-Conversation labels use Pi's public, display-only Markdown transformer and do not modify session data or take ownership of built-in tools. Pi 0.84 does not yet expose a public side-panel API, so the bounded split adapter uses the compatible fullscreen layout root and falls back to an overlay when that capability is unavailable or has been replaced unexpectedly. See [`docs/COMPATIBILITY.md`](./docs/COMPATIBILITY.md) for the tested extension matrix and ownership contract.
+The one intentional shell boundary is confirmed Checks rerun: CodeUI stores the original complete Bash validation command, cwd, and optional finite timeout; shows sanitized full values for confirmation; then executes `/bin/bash` (or `bash`) with `-c` and the original raw command. It never executes a truncated display string. Treat rerun approval as approving that shell command.
+
+Established repositories refresh from debounced events and explicit actions rather than idle polling. Only non-repository discovery polls: a low-frequency **30-second** check notices `git init`.
+
+Conversation labels are display-only and do not modify stored messages or take ownership of built-in tools. Pi 0.84 has no public side-panel API, so fullscreen split uses a bounded identity-checked adapter and falls back safely. See [`docs/COMPATIBILITY.md`](./docs/COMPATIBILITY.md).
 
 ## Commands
 
 | Command | Purpose |
 | --- | --- |
-| `/codeui` | Focus or open the workspace |
+| `/codeui` | Focus/open workspace |
 | `/codeui-refresh` | Refresh repository state |
-| `/codeui-reset-workspace` | Reset persisted width, Git scope, and dock state for the current workspace |
-| `/codeui-vim` | Toggle embedded Vim mode for the current session |
+| `/codeui-reset-workspace` | Reset saved width, Git scope, and dock state for this workspace |
+| `/codeui-vim` | Toggle embedded Vim mode for this session |
 | `/codeui-doctor` | Inspect runtime, configuration, compatibility, and diagnostics |
-| `/reload` | Reload Pi extensions and resources |
+| `/reload` | Reload Pi extensions/resources |
 
 ## Development
 
@@ -199,27 +186,18 @@ npm pack --dry-run
 npm run dev
 ```
 
-GitHub Actions runs TypeScript, the full Node test suite, and a package-content smoke check on Node.js 22.19.0.
-
-- Architecture and completed milestones: [`PRODUCT_PLAN.md`](./PRODUCT_PLAN.md)
+- Architecture and delivery status: [`PRODUCT_PLAN.md`](./PRODUCT_PLAN.md)
 - Release history: [`CHANGELOG.md`](./CHANGELOG.md)
 - Release checklist: [`docs/RELEASING.md`](./docs/RELEASING.md)
-- v1 migration notes: [`docs/MIGRATION-v1.md`](./docs/MIGRATION-v1.md)
+- v1 migration: [`docs/MIGRATION-v1.md`](./docs/MIGRATION-v1.md)
 
 ## Contributing
 
-Issues and pull requests are welcome.
-
-- Read [`CONTRIBUTING.md`](./CONTRIBUTING.md) for setup, testing, and review expectations.
-- Use the provided [bug report](https://github.com/alpertarhan/pi-codeui/issues/new?template=bug_report.yml) or [feature request](https://github.com/alpertarhan/pi-codeui/issues/new?template=feature_request.yml) templates, or open a blank issue.
-- Follow the [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md).
-- Report vulnerabilities privately according to [`SECURITY.md`](./SECURITY.md).
-
-Small focused fixes do not require a prior issue. Please open an issue before broad UX, architecture, dependency, persistence, or compatibility changes so the direction can be agreed first.
+Issues and focused pull requests are welcome. Read [`CONTRIBUTING.md`](./CONTRIBUTING.md), follow the [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md), and report vulnerabilities privately per [`SECURITY.md`](./SECURITY.md).
 
 ## Scope
 
-pi-codeui intentionally does not replace Pi's transcript renderer or become a full IDE. Untracked deletion, conflict/rename discard, multi-line commit bodies, commit amend/signing, and advanced multi-hunk workflows remain out of scope until they can preserve the same fail-closed contract.
+pi-codeui does not replace Pi's transcript renderer or become a full IDE. Untracked deletion, conflict/rename discard, multi-line commit bodies, amend/signing, and advanced multi-hunk workflows remain out of scope until they can preserve the fail-closed contract.
 
 ## License
 

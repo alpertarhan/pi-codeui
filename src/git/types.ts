@@ -10,9 +10,17 @@ export interface BranchInfo {
   gone: boolean;
 }
 
+export interface FileLineStats {
+  added: number;
+  deleted: number;
+  binary: boolean;
+}
+
 export interface FileChange {
   path: string;
   oldPath?: string;
+  workingStats?: FileLineStats;
+  stagedStats?: FileLineStats;
   index: StatusCode;
   worktree: StatusCode;
   staged: boolean;
@@ -43,6 +51,7 @@ export interface LineStats {
   added: number;
   deleted: number;
   binaryFiles: number;
+  byPath?: Map<string, FileLineStats>;
 }
 
 export interface TextResult {

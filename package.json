@@ -1,6 +1,6 @@
 {
   "name": "pi-codeui",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Conversation-first, code-aware terminal workspace for Pi Coding Agent",
   "type": "module",
   "license": "MIT",
@@ -24,6 +24,7 @@
     "docs/COMPATIBILITY.md",
     "docs/MIGRATION-v1.md",
     "docs/RELEASING.md",
+    "docs/screenshots/pi-codeui-review.png",
     "docs/screenshots/pi-codeui-fullscreen.png",
     "README.md",
     "PRODUCT_PLAN.md",
@@ -58,7 +59,7 @@
     "themes": [
       "./themes/codeui-midnight.json"
     ],
-    "image": "https://raw.githubusercontent.com/alpertarhan/pi-codeui/main/docs/screenshots/pi-codeui-fullscreen.png"
+    "image": "https://raw.githubusercontent.com/alpertarhan/pi-codeui/main/docs/screenshots/pi-codeui-review.png"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "^0.84.0",

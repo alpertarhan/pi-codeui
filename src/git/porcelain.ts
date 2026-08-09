@@ -80,17 +80,20 @@ export function parseStatus(output: string): RepoStatus {
 }
 
 export function parseNumstat(output: string): LineStats {
-  const stats: LineStats = { files: 0, added: 0, deleted: 0, binaryFiles: 0 };
+  const byPath = new Map();
+  const stats: LineStats = { files: 0, added: 0, deleted: 0, binaryFiles: 0, byPath };
   for (const record of output.split("\0")) {
     if (!record) continue;
-    const match = /^(\d+|-)\t(\d+|-)\t[\s\S]+$/.exec(record);
+    const match = /^(\d+|-)\t(\d+|-)\t([\s\S]+)$/.exec(record);
     if (!match) throw new PorcelainError("malformed numstat record");
+    const binary = match[1] === "-" || match[2] === "-";
+    const added = binary ? 0 : Number(match[1]);
+    const deleted = binary ? 0 : Number(match[2]);
     stats.files++;
-    if (match[1] === "-" || match[2] === "-") stats.binaryFiles++;
-    else {
-      stats.added += Number(match[1]);
-      stats.deleted += Number(match[2]);
-    }
+    stats.added += added;
+    stats.deleted += deleted;
+    if (binary) stats.binaryFiles++;
+    byPath.set(match[3]!, { added, deleted, binary });
   }
   return stats;
 }

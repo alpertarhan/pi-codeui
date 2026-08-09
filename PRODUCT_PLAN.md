@@ -1,426 +1,199 @@
 # pi-codeui — Product Plan
 
+- **Status:** v1.2.0 implemented and release-verified
+- **Last updated:** 2026-08-09
+- **Package version:** 1.2.0
+
 ## 1. Product goal
 
-`pi-codeui` is a Pi Coding Agent extension package that adds a conversation-first, code-aware, keyboard-first terminal UI without replacing Pi's conversation flow.
+`pi-codeui` is a conversation-first, code-aware, keyboard-first terminal workspace for Pi Coding Agent. It keeps Pi's native conversation flow while adding Session, Activity, Changes, Checks, Search, extension docking, guarded Git actions, and optional Vim/Neovim workflows.
 
-The selected experience is an integrated terminal workspace:
+It is not a replacement transcript renderer or full IDE.
 
-- project/session-aware global chrome and a bordered, focus-aware prompt;
-- a persistent, resizable right rail with a session-local Session home plus Activity, Changes, Checks, Search, and extension widgets;
-- safe file/hunk stage, unstage, discard, and commit flows;
-- an optional minimal Vim mode for Pi's prompt editor;
-- real Neovim integration by suspending Pi's TUI, opening `nvim`, then restoring Pi.
+## 2. Current implementation
 
-## 2. Platform fit and constraints
+| Area | Current implementation through v1.2.0 |
+| --- | --- |
+| Session | Conversation overview, status/counts/resources, session-local active tab, latest-request edit/check/failure summary |
+| Activity | Live tool timeline plus completed tool history hydrated from resumed sessions; Bash timeout shown in seconds |
+| Changes | Worktree/Staged scopes, diffs/hunks, per-file working/staged numstats, safe stage/unstage/discard/commit, latest-request/all filter |
+| Checks | Parsed test/lint/typecheck/build diagnostics, resumed history, confirmed rerun of stored Bash validations |
+| Search | Messages, Activity, Checks, all tracked files, and non-ignored untracked repository files; configurable 1–200 result cap (default 50) |
+| Layout | Fullscreen split at 120+ columns by default, safe overlay/dashboard fallback, persisted width, temporary `z` review zoom |
+| Input | Keyboard/mouse navigation and IME-safe grapheme editing/cursor handling in Search |
+| Appearance | Host-theme inheritance by default; bundled opt-in CodeUI Midnight; identity-conditional theme restoration |
+| Repository lifecycle | Nested monorepo root handling, event-driven refresh, and 30-second non-repository discovery polling |
+| Safety | Repository-relative Git validation, fail-closed actions, agent-active discard block, explicit rerun shell boundary |
 
-Pi's public extension API already supports the required building blocks:
+The latest-request Changes scope contains only paths from successful direct `edit` and `write` tool results associated with the latest request. It excludes failed calls, Bash/manual changes, and inferred authorship; it is a review filter, not an ownership claim.
 
-- `ctx.ui.setWidget()` for the persistent Git summary;
-- `ctx.ui.custom(..., { overlay: true })` for the diff explorer;
-- `ctx.ui.setStatus()` for repository/refresh state;
-- `ctx.ui.setEditorComponent()` and `CustomEditor` for modal prompt editing;
-- `pi.registerCommand()` and `pi.registerShortcut()` for navigation;
-- `pi.exec()` for shell-free Git queries and guarded mutations;
-- lifecycle/tool events for event-driven refreshes;
-- package themes and Pi's existing theme tokens for styling.
+## 3. Platform fit and constraints
 
-Important limits:
+Pi 0.84 public APIs provide widgets, statuses, overlays, editor replacement, commands/shortcuts, lifecycle/tool events, themes, and process execution. Pi does not expose a public persistent side-panel API, so fullscreen split uses a bounded adapter around the existing `layoutRoot`:
 
-1. Pi currently does not expose a public extension API for permanently reflowing the transcript into columns. For local Pi 0.84 use, the selected experimental adapter identity-checks and wraps the fullscreen renderer's existing `layoutRoot` in pi-tui's `HStack`; it restores the original root on reload/shutdown and falls back if internals are unavailable. The long-term solution remains an upstream `setSidePanel` extension point.
-2. Overlay mode is documented as experimental and remains the regular/narrow-terminal fallback.
-3. Embedded Vim mode will intentionally be a small modal editor, not a complete Vim implementation.
-4. Real Neovim will run as a separate interactive terminal process while Pi's TUI is suspended.
-5. Terminal applications cannot portably change the host terminal's font family or toggle ligatures. Ghostty, Kitty, WezTerm, iTerm2, and similar hosts own those settings; this extension controls glyph/icon presets and validates fallbacks.
+- install only in fullscreen mode at/above `explorer.minOverlayColumns`;
+- require the compatible `setLayoutRoot` capability and expected shape;
+- restore roots/components only by identity;
+- adopt an externally replaced root rather than overwriting it;
+- fall back to overlay or transient dashboard when ineligible.
 
-## 3. UX specification
+Font family, size, ligatures, and font features remain host-terminal settings. Embedded Vim mode remains intentionally small.
 
-New conversations start on a single-body Session overview. It derives its title and counts from Pi's existing session entries without a second LLM summary, lists only reliable image/file resources, and keeps code-specific surfaces available without making them the default. Empty Activity, Changes, and Checks views also use one contextual body; Checks distinguishes never-run, running, clear, and failed states. The active tab is session-local, while width, Git scope, and dock preferences remain workspace-persistent.
-
-### 3.1 Persistent widget
-
-Default placement: above the editor.
+## 4. Architecture and state
 
 ```text
- Git main  M 3  A 1  ? 2  +48/-17   src/app.ts · src/git.ts · …
+src/index.ts                 Extension lifecycle, commands, themes, rerun boundary
+src/activity.ts              Live/resumed tool history, checks, latest-request scope
+src/git-state.ts             Repository state, numstats, file index, refresh/discovery
+src/git/{git,porcelain}.ts   Direct-argv Git adapter and NUL-delimited parsers
+src/git-explorer.ts          Session/Activity/Changes/Checks/Search UI and controls
+src/split-panel.ts           Bounded fullscreen split, docking, resize, temporary zoom
+src/settings*.ts             Trusted merge/validation/live reload
+src/session.ts               Conversation overview/resources
+src/external-editor.ts       Direct-argv editor and quickfix handoff
 ```
 
-States:
+State ownership:
 
-- clean: `Git main ✓ clean`;
-- dirty: branch, staged/unstaged/untracked counts, line statistics, first changed paths;
-- loading: subtle refresh indicator;
-- not a repository: hidden by default;
-- Git error: compact warning plus `/codeui-refresh` hint.
+| State | Lifetime |
+| --- | --- |
+| Active Session/Activity/Changes/Checks tab | Session-local; new/resumed runtime opens Session |
+| Latest-request summary/filter | Current hydrated/live request history; not persisted as authorship |
+| Git scope, split width, Extensions dock | Repository workspace-persistent |
+| `z` review zoom | Temporary fullscreen split state; never persisted |
+| Settings | Built-in → global → trusted project, with last-valid live reload |
+| Theme | Host-owned for `inherit`; CodeUI restores only an explicit theme it still owns |
 
-The widget remains display-only so it does not steal focus from the prompt editor.
+Nested project paths are normalized against the detected repository root before file activity, stats, diffs, and search are correlated.
 
-### 3.2 Diff explorer
+## 5. Git, search, and refresh
 
-Open with `/codeui` or the default shortcut `Ctrl+Shift+G`.
-
-Wide terminal (`>= 100` columns): right-side overlay, roughly 52% width and at most 85% height.
-
-Narrow terminal: transient full-width dashboard instead of an overlay.
-
-```text
-╭─ Git Explorer · main ─────────────────────────╮
-│ Working  Staged                               │
-│ > M src/app.ts                         +8/-2  │
-│   A src/git.ts                         +74/-0 │
-├─ src/app.ts ──────────────────────────────────┤
-│ @@ -18,6 +18,12 @@                            │
-│ - old line                                    │
-│ + new line                                    │
-│                                               │
-│ j/k move · tab scope · e nvim · r refresh     │
-╰───────────────────────────────────────────────╯
-```
-
-Initial controls:
-
-| Key | Action |
-|---|---|
-| `j` / `k`, arrows | Select changed file / scroll diff |
-| `Tab` | Switch working-tree and staged changes |
-| `Enter` | Toggle list/diff focus |
-| `e` | Open selected file in Neovim |
-| `r` | Refresh Git state |
-| `Esc` / `q` | Close explorer |
-
-Later safe Git controls:
-
-| Key | Action |
-|---|---|
-| `s` | Stage selected file |
-| `u` | Unstage selected file |
-| `p` | Open patch-level staging dashboard |
-| `d` | Discard with an explicit confirmation and preview |
-
-### 3.3 Vim and Neovim
-
-Embedded Vim mode is optional and starts in insert mode. The first version supports:
-
-- `Esc`, `i`, `a` for mode changes;
-- `h`, `j`, `k`, `l`, `0`, `$`, `w`, `b` for movement;
-- `x` for deleting a character;
-- Pi's existing app shortcuts through `CustomEditor` fallback;
-- a visible `NORMAL` / `INSERT` mode label.
-
-It will not initially implement registers, macros, visual mode, text objects, Ex commands, or a Vimscript engine.
-
-Real Neovim integration has two paths:
-
-1. Pi's built-in `Ctrl+G` external editor flow for editing the current prompt. Users can set `externalEditor` to `nvim`.
-2. `e` in Git Explorer suspends Pi's TUI and spawns `nvim -- <selected-file>` with inherited stdio. When Neovim exits, Pi resumes and Git state refreshes.
-
-No shell interpolation will be used for selected file paths.
-
-## 4. Functional scope
-
-### MVP
-
-- detect whether the current directory is a Git worktree;
-- parse staged, unstaged, untracked, deleted, conflicted, and renamed paths;
-- show branch and compact change statistics;
-- preview per-file staged and unstaged diffs;
-- show untracked-file previews with size limits;
-- persistent widget and responsive explorer;
-- manual and event-driven refresh;
-- minimal optional Vim mode;
-- Neovim opening for prompt and selected files;
-- commands, shortcut, config loading, and graceful no-Git behavior.
-
-### Product follow-ups
-
-- stage/unstage selected file;
-- patch-level staging;
-- safe discard flow;
-- commit composer and recent commit log;
-- file filtering and fuzzy search;
-- jump to the first changed hunk in Neovim;
-- conflict markers and merge-oriented view;
-- optional Git worktree/submodule indicators;
-- packaged light/dark themes and appearance presets;
-- package publishing through npm/git and Pi package gallery metadata.
-
-### Non-goals
-
-- replacing Pi's entire transcript renderer;
-- implementing a complete Vim clone;
-- bundling libgit2 or a Git parsing dependency;
-- continuously polling Git while the UI is idle;
-- silently modifying the user's global Pi settings;
-- destructive Git operations without confirmation.
-
-## 5. Technical architecture
+### Git data flow
 
 ```text
-src/
-  index.ts                 Extension registration and lifecycle
-  config.ts                Global/project config loading and validation
-  git.ts                   Git command adapter
-  porcelain.ts             `git status --porcelain=v1 -z` parser
-  state.ts                 Repository UI state and debounced refresh
-  ui/
-    changes-widget.ts      Persistent compact summary
-    diff-explorer.ts       Responsive overlay/dashboard component
-    vim-editor.ts          Minimal modal `CustomEditor`
-    interactive-editor.ts  Suspend/resume TUI and spawn Neovim
-  format/
-    diff.ts                Width-safe ANSI diff rendering
-```
-
-Keep modules small and avoid a UI framework or state-management dependency. Use Node built-ins, `pi.exec()`, `@earendil-works/pi-coding-agent`, and `@earendil-works/pi-tui` only.
-
-### 5.1 Git data flow
-
-Status command:
-
-```text
+git rev-parse --show-toplevel
 git status --porcelain=v1 -z --branch --untracked-files=all
+git diff --numstat -z
+git diff --cached --numstat -z
+git ls-files -z --cached --others --exclude-standard
 ```
 
-Diff commands:
+Paths are passed after `--` where applicable. NUL-delimited output preserves spaces and rename records. Working and staged numstats are attached separately to each file. Diffs/previews are byte/line bounded and marked when truncated.
 
-```text
-git diff --no-ext-diff --no-color --unified=<n> -- <path>
-git diff --cached --no-ext-diff --no-color --unified=<n> -- <path>
-```
+### Search
 
-Rules:
+Search documents combine:
 
-- always pass paths after `--`;
-- preserve spaces and rename pairs from NUL-delimited porcelain output;
-- treat `git diff` exit code `1` as data where applicable, not automatically as failure;
-- cap rendered diff lines/bytes and indicate truncation;
-- render with Pi theme tokens: `toolDiffAdded`, `toolDiffRemoved`, and `toolDiffContext`;
-- do not send UI-only Git data into model context.
+- session messages (`m:`);
+- repository-wide tracked and non-ignored untracked files (`f:`), including unchanged files;
+- hydrated/live Activity (`a:`);
+- current Checks diagnostics (`c:`).
 
-### 5.2 Refresh policy
+The repository file list is loaded on search, cached for the current Git generation, and invalidated on refresh. `explorer.maxSearchRecords` accepts 1–200 and defaults to 50; the internal document ceiling remains 10,000.
 
-Refresh on:
+### Refresh policy
 
-- `session_start`;
-- explorer open and explicit `r`;
-- completion of `edit` and `write` tool executions;
-- completion of Bash tool executions that may mutate the worktree;
-- `agent_settled`;
-- return from Neovim;
-- stage/unstage actions.
+Refresh is debounced and event-driven on session start, workspace open/manual refresh, completed `edit`/`write`/Bash tools, agent settled, editor return, and Git actions. High-frequency idle Git polling and recursive filesystem watching remain excluded.
 
-Debounce closely grouped refreshes. Do not recursively watch the repository or run a permanent polling loop in the first release.
+Exception: while the current directory is not a repository, CodeUI retries repository discovery every 30 seconds so `git init` is noticed without reopening the session. The timer stops once a repository is found or the runtime is disposed.
 
-### 5.3 Extension compatibility
+## 6. Layout, controls, and settings
 
-- use unique widget/status keys such as `pi-codeui.git`;
-- own the global header/footer only inside CodeUI's bounded fullscreen adapter and restore by component identity;
-- keep Vim mode off by default because only one custom editor factory can effectively own the editor;
-- capture and restore the previous editor factory when toggling Vim mode;
-- guard terminal-only behavior with `ctx.mode === "tui"`;
-- clean up overlays, editor overrides, and resources on `session_shutdown`;
-- provide slash-command fallbacks for every shortcut;
-- avoid overriding built-in tools.
+Default split eligibility is **fullscreen + at least 120 columns + compatible viewport capability**. At/above the threshold an ineligible split uses a right overlay; below it CodeUI uses a transient full-width dashboard.
 
-## 6. Configuration and appearance
+| Key | Scope | Action |
+| --- | --- | --- |
+| `h` / `a` / `g` / `c` | Workspace | Session / Activity / Changes / Checks (`Sess` / `Act` / `Git` / `Chk` when compact) |
+| `/` | Workspace | Unified Search; `m:` / `f:` / `a:` / `c:` filter sources |
+| `t` | Changes | Latest successful direct edit/write files / all workspace changes |
+| `Tab` | Changes | Worktree / Staged |
+| `s`, `n` / `p` | Changes | Apply selected file/hunk action; move between hunks |
+| `m`, `x`, `C`, `Q` | Changes | Menu, confirmed tracked discard, commit, quickfix |
+| `r` | Checks | Confirm and rerun selected stored check |
+| `r` | Other views | Refresh Git state |
+| `[` / `]` / `0` | Fullscreen split only | Resize/reset persistent width |
+| `z` | Fullscreen split only | Toggle non-persistent review zoom |
+| `w`, `?`, `Esc` / `q` | Workspace | Dock, contextual help, return to prompt |
 
-Use two cooperating formats rather than duplicating Pi's theme system:
+Footer hints are action-first and only show currently available operations.
 
-1. `codeui.settings.json` controls layout, density, glyphs/icons, Git behavior, Vim, and feature flags.
-2. Native Pi theme JSON files control colors and remain selectable through Pi's `/theme` UI.
-
-Global configuration respects `PI_CODING_AGENT_DIR` through Pi's exported `getAgentDir()`:
-
-```text
-~/.pi/agent/codeui.settings.json
-```
-
-Trusted project override:
-
-```text
-.pi/codeui.settings.json
-```
-
-Proposed schema:
+Current settings are JSON files plus schema. Key defaults:
 
 ```json
 {
-  "$schema": "https://unpkg.com/pi-codeui/schemas/codeui.settings.schema.json",
-  "appearance": {
-    "theme": "codeui-midnight",
-    "density": "compact",
-    "borders": "rounded",
-    "glyphPreset": "nerd",
-    "fallbackGlyphPreset": "unicode",
-    "icons": {
-      "brand": "π",
-      "branch": "",
-      "modified": "M",
-      "added": "A",
-      "untracked": "?"
-    }
-  },
-  "chrome": {
-    "header": true,
-    "footer": true,
-    "editor": true
-  },
-  "widget": {
-    "enabled": true,
-    "maxFiles": 4,
-    "placement": "aboveEditor"
-  },
+  "appearance": { "theme": "inherit" },
   "explorer": {
     "layout": "split",
     "splitWidth": "34%",
     "overlayWidth": "52%",
-    "minOverlayColumns": 100,
-    "diffContext": 3,
-    "maxDiffLines": 500
-  },
-  "vim": {
-    "enabled": false,
-    "startMode": "insert",
-    "externalEditor": ["nvim"]
-  },
-  "git": {
-    "showUntracked": true,
-    "ignoreWhitespace": false
+    "minOverlayColumns": 120,
+    "maxSearchRecords": 50
   }
 }
 ```
 
-Bundled theme example:
+A SettingsList UI and `/codeui-settings` are **future work and do not exist in the current implementation**. Users edit global or trusted-project JSON and use `/codeui-doctor` for diagnostics.
 
-```text
-themes/codeui-midnight.json
-```
+## 7. Security boundaries
 
-It uses Pi's native theme schema and tokens such as `accent`, `border`, `selectedBg`, `toolDiffAdded`, and `toolDiffRemoved`. Pi handles theme selection and theme-file reloading; the extension watches `codeui.settings.json` and rerenders after valid changes.
+Normal Git/editor paths use direct argv execution; selected file paths are never shell-interpolated. Mutations validate repository-relative targets and current state. Unsupported untracked deletion, rename/conflict discard, binary/truncated/whitespace-filtered hunk operations fail closed.
 
-Font family, size, font features, and ligatures remain terminal-profile settings. The extension provides documented Ghostty/Kitty/WezTerm examples plus `/codeui-doctor` glyph samples. `glyphPreset` can be `nerd`, `unicode`, `ascii`, or `custom`; custom icons are width-measured and safely padded/truncated.
+Tracked-file discard:
 
-Project configuration is read only after Pi marks the project trusted. Unknown fields are reported once and ignored; invalid values fall back to the last valid configuration rather than breaking the TUI. A `/codeui-settings` command can provide a `SettingsList` UI in a later milestone.
+1. is blocked while the agent is active;
+2. validates file/scope/state;
+3. shows explicit confirmation;
+4. checks agent-active state again after confirmation;
+5. performs only the validated tracked discard and refreshes state.
 
-## 7. Commands
+Checks rerun is the one intentional shell boundary. For recognized Bash validation records CodeUI stores the original full command, cwd, and optional finite timeout in seconds. `r` always displays sanitized full values for confirmation, then directly invokes `/bin/bash` (or `bash`) with argv `[-c, rawCommand]`, the stored cwd, and timeout. The display is never truncated for confirmation and the sanitized display string is never executed.
 
-| Command | Purpose |
-|---|---|
-| `/codeui` | Focus the CodeUI workspace |
-| `/codeui-refresh` | Refresh repository state |
-| `/codeui-vim` | Toggle embedded Vim mode |
-| `/codeui-settings` | Open extension settings |
-| `/codeui-doctor` | Report Git, Neovim, terminal width, and config status |
+Project settings are read only for Pi-trusted projects. Theme restoration is conditional: if the host/user/another extension changed the selected theme after CodeUI, CodeUI does not overwrite that choice.
 
-## 8. Milestones
+## 8. Commands
 
-### M0 — Package scaffold
+| Command | Status | Purpose |
+| --- | --- | --- |
+| `/codeui` | Implemented | Focus/open workspace |
+| `/codeui-refresh` | Implemented | Refresh repository state |
+| `/codeui-reset-workspace` | Implemented | Reset persisted workspace width/scope/dock |
+| `/codeui-vim` | Implemented | Toggle session Vim mode |
+| `/codeui-doctor` | Implemented | Report settings/runtime/repository/layout/activity diagnostics |
+| `/codeui-settings` | Future | Possible SettingsList UI; not registered or shipped |
 
-Deliverables:
+## 9. Milestones
 
-- npm package metadata with `pi.extensions` manifest;
-- TypeScript setup and source entry point;
-- peer dependencies for Pi packages;
-- local launch script using `pi -e`;
-- README with install and development instructions.
+| Milestone | Status | Delivered |
+| --- | --- | --- |
+| M1 Core workspace | Complete | Session-first workspace, compact chrome, responsive fallback |
+| M2 Git core | Complete | Nested-root-safe status/diff/numstat parsing and repository state |
+| M3 Activity and Checks | Complete | Live timeline, diagnostics, timeout seconds, resumed-history hydration |
+| M4 Safe actions | Complete | File/hunk stage/unstage, tracked discard, commit, quickfix, active-agent guard |
+| M5 Review workflow | Complete | Latest-request successful edit/write scope and request summary |
+| M6 Layout and controls | Complete | 120-column split threshold, action-first hints, scoped `t`/`r`/`z`/resize keys |
+| M7 Search and input | Complete | Repository-wide file search, result limit, IME/grapheme handling |
+| M8 Refresh, rerun, themes | Complete | 30-second discovery, confirmed Bash rerun boundary, inherit/conditional restore |
 
-Acceptance: extension loads, `/reload` works, no UI appears outside TUI mode.
+## 10. Completion checklist
 
-### M1 — Read-only Git core
+- [x] Milestones 1–8 implementation verified
+- [x] Nested monorepo paths correlate against repository root
+- [x] Successful direct edit/write latest-request scope and summary
+- [x] Separate per-file Worktree/Staged numstats
+- [x] Resumed Activity and Checks hydration
+- [x] Repository-wide tracked/non-ignored-untracked Search
+- [x] IME-safe grapheme Search input
+- [x] Confirmed Checks rerun with full command/cwd/timeout display
+- [x] Agent-active destructive discard guard before and after confirmation
+- [x] Default 120-column split threshold and temporary `z` zoom
+- [x] Host-theme inheritance and identity-conditional restoration
+- [x] Low-frequency non-repository discovery exception documented
+- [x] Populated product screenshot at `docs/screenshots/pi-codeui-review.png`
+- [x] Release version/date and clean package smoke test
+- [ ] Future SettingsList design and `/codeui-settings` implementation (not release-blocking)
 
-Deliverables:
+## 11. Non-goals and future work
 
-- repository detection;
-- porcelain parser;
-- branch/change/stat models;
-- staged, unstaged, rename, conflict, and untracked handling;
-- unit tests using parser fixtures and temporary Git repositories.
+Non-goals remain: replacing Pi's transcript, a complete Vim clone, libgit2, recursive repository watching, high-frequency idle Git polling, silent host-setting changes, and unconfirmed destructive operations.
 
-Acceptance: paths containing spaces and rename records parse correctly; non-Git directories fail quietly.
-
-### M2 — Persistent hybrid UI
-
-Deliverables:
-
-- changed-files widget;
-- responsive overlay/full-dashboard explorer;
-- diff rendering, scrolling, truncation, and theme support;
-- event-driven/debounced refresh;
-- commands and default shortcut.
-
-Acceptance: every rendered line stays within terminal width; resize and narrow-terminal fallback remain usable.
-
-### M3 — Vim/Neovim integration
-
-Deliverables:
-
-- optional minimal modal prompt editor;
-- mode indicator;
-- previous-editor restoration;
-- selected-file Neovim opening with TUI suspend/resume;
-- documentation for Pi's built-in `externalEditor` setting.
-
-Acceptance: Pi's interrupt, exit, submit, model, and external-editor shortcuts still work; paths are passed without shell interpolation.
-
-### M4 — Safe Git actions
-
-Status: per-file and per-hunk stage/unstage, guarded tracked-file discard, right-click/keyboard actions, single-line commit composition, notifications, and automatic refresh are implemented. Multi-hunk selection and advanced commit operations remain follow-ups.
-
-Deliverables:
-
-- stage and unstage;
-- patch selection;
-- guarded discard;
-- action notifications and automatic refresh.
-
-Acceptance: destructive actions require confirmation; failures never leave the UI showing a false clean state.
-
-### M5 — Customization and distribution
-
-Deliverables:
-
-- config merge/validation;
-- `/codeui-settings` and `/codeui-doctor`;
-- optional bundled themes;
-- npm/git installation for `pi-codeui`;
-- screenshots/video and package-gallery metadata;
-- compatibility matrix for Kitty, Ghostty, WezTerm, iTerm2, and narrow terminals.
-
-Acceptance: `pi install npm:pi-codeui` loads the extension, bundled themes, and schemas without manual copying.
-
-## 9. Verification strategy
-
-Automated:
-
-- parser tests for every porcelain status pair and rename path;
-- temporary-repository integration tests for staged/unstaged/untracked diffs;
-- component render tests at widths 60, 80, 100, and 160;
-- assertions that `visibleWidth(line) <= renderWidth`;
-- config validation and merge tests;
-- command failure, cancellation, and diff truncation tests.
-
-Manual TUI matrix:
-
-- regular and fullscreen Pi TUI modes;
-- empty, clean, dirty, conflicted, and non-Git directories;
-- terminal resize while overlay is open;
-- editor mode toggling during and after an agent run;
-- Neovim open/close and cancelled/error exits;
-- coexistence with another widget/status extension;
-- reload, new session, resume, and shutdown cleanup.
-
-## 10. Risks and mitigations
-
-| Risk | Mitigation |
-|---|---|
-| Experimental overlay behavior changes | Isolate overlay adapter and retain full-dashboard fallback |
-| Custom editor conflicts with another extension | Default off; detect, capture, restore, and warn |
-| Large diffs freeze rendering | Lazy per-file loading, byte/line caps, render caching |
-| Git paths break parsing or commands | NUL-delimited porcelain, argv arrays, `--` path separator |
-| Stale widget after external edits | Refresh on explorer open/manual action; add optional watcher only if users need it |
-| Destructive Git action causes data loss | Restrict supported targets, require explicit confirmation, preview/check patches, and fail closed for conflicts/untracked deletion |
-| Narrow terminal makes side overlay unusable | Automatic transient dashboard fallback |
-
-## 11. v1 release posture
-
-Milestones M0–M10 are complete. The v1.0.0 release gate requires the terminal/accessibility matrix, large-workspace profile, configured-extension audit, canonical package metadata, full test suite, package-content smoke check, clean-install Pi load, and a green GitHub Actions run. Advanced destructive Git operations remain post-v1 unless they can preserve the same fail-closed contract.
+Future candidates include the SettingsList UI, richer conflict/rename workflows, multi-line/amend/signing commit flows, and advanced multi-hunk selection. They ship only when they preserve the current fail-closed and compatibility contracts.
