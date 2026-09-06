@@ -6,6 +6,8 @@
 [![Pi](https://img.shields.io/badge/Pi-0.84.x-58d9e8)](https://pi.dev)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
+> ⚠️ **This project is no longer maintained.** Issues, pull requests, and support requests are not actively monitored.
+
 **A conversation-first, code-aware terminal workspace for [Pi Coding Agent](https://pi.dev).**
 
 Keep chat central while Git changes, tool activity, checks, repository search, session resources, and Vim/Neovim workflows stay visible in a keyboard-first rail.
@@ -193,7 +195,7 @@ npm run dev
 
 ## Contributing
 
-Issues and focused pull requests are welcome. Read [`CONTRIBUTING.md`](./CONTRIBUTING.md), follow the [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md), and report vulnerabilities privately per [`SECURITY.md`](./SECURITY.md).
+This project is no longer actively maintained, so issues and pull requests are not monitored. For historical context, see [`CONTRIBUTING.md`](./CONTRIBUTING.md); report vulnerabilities privately per [`SECURITY.md`](./SECURITY.md).
 
 ## Scope
 
